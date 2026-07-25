@@ -1,0 +1,74 @@
+import { isPlainObject } from '@nca/shared';
+import { DSL_SCHEMA_VERSION } from './version';
+
+type RawDsl = Record<string, unknown>;
+
+/**
+ * 版本迁移链。每次 DSL 结构破坏性变更：
+ *   1. version.ts 里递增 DSL_SCHEMA_VERSION 并加进 KNOWN_SCHEMA_VERSIONS
+ *   2. 这里补一条 { from, to, up } —— 只做纯函数式结构改写
+ * 半年前发布的活动页因此永远能被今天的 Renderer 打开。
+ */
+interface Migration {
+  from: string;
+  to: string;
+  up: (dsl: RawDsl) => RawDsl;
+}
+
+const migrations: Migration[] = [
+  // 示例（1.0.0 是首版，暂无迁移）：
+  // { from: '1.0.0', to: '1.1.0', up: (dsl) => ({ ...dsl, schemaVersion: '1.1.0', ... }) },
+];
+
+export interface MigrateResult {
+  dsl: RawDsl;
+  from: string;
+  to: string;
+  applied: string[];
+}
+
+export function migrateDsl(input: unknown): MigrateResult {
+  if (!isPlainObject(input)) {
+    throw new Error('DSL 需为对象');
+  }
+  const from = typeof input.schemaVersion === 'string' ? input.schemaVersion : '1.0.0';
+
+  let current: RawDsl = { ...input, schemaVersion: from };
+  const applied: string[] = [];
+
+  // 沿链推进，直到没有可用迁移
+  let guard = 0;
+  for (;;) {
+    if (guard++ > migrations.length + 1) {
+      throw new Error('DSL 迁移链出现循环');
+    }
+    const version = current.schemaVersion as string;
+    const next = migrations.find((m) => m.from === version);
+    if (!next) break;
+    current = next.up(current);
+    current.schemaVersion = next.to;
+    applied.push(`${next.from}→${next.to}`);
+  }
+
+  const to = current.schemaVersion as string;
+  if (to !== DSL_SCHEMA_VERSION) {
+    // 高于当前运行时的版本：说明 Renderer 代码比 DSL 老，需提示升级而非静默渲染
+    if (compareVersion(to, DSL_SCHEMA_VERSION) > 0) {
+      throw new Error(
+        `DSL 版本 ${to} 高于当前 Renderer 支持的 ${DSL_SCHEMA_VERSION}，请升级渲染器`,
+      );
+    }
+  }
+
+  return { dsl: current, from, to, applied };
+}
+
+export function compareVersion(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
