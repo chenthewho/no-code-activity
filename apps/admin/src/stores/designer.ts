@@ -1,4 +1,13 @@
-import { createEmptyDsl, type CraftNode, type FinalDsl, type JsonValue } from '@nca/dsl';
+import {
+  createEmptyDsl,
+  type CraftNode,
+  type DataSource,
+  type DslAction,
+  type EventBinding,
+  type FinalDsl,
+  type JsonValue,
+  type NodeControl,
+} from '@nca/dsl';
 import { createId, ROOT_NODE_ID } from '@nca/shared';
 import { create } from 'zustand';
 
@@ -16,6 +25,32 @@ interface DesignerState {
   updateProps: (nodeId: string, patch: Record<string, JsonValue>) => void;
   removeNode: (nodeId: string) => void;
   moveNode: (nodeId: string, direction: -1 | 1) => void;
+  /** 拖拽落点：把节点插到指定父容器的指定下标 */
+  relocateNode: (nodeId: string, parentId: string, index: number) => void;
+  insertNode: (
+    materialName: string,
+    defaultProps: Record<string, JsonValue>,
+    parentId: string,
+    index: number,
+  ) => void;
+
+  // 事件编排
+  addEvent: (nodeId: string, trigger: EventBinding['trigger'], customEvent?: string) => void;
+  updateEvent: (eventId: string, patch: Partial<EventBinding>) => void;
+  removeEvent: (eventId: string) => void;
+  addAction: (eventId: string, action: DslAction) => void;
+  updateAction: (eventId: string, index: number, patch: Record<string, unknown>) => void;
+  removeAction: (eventId: string, index: number) => void;
+  moveAction: (eventId: string, index: number, direction: -1 | 1) => void;
+
+  // 数据源
+  addDataSource: (ds: DataSource) => void;
+  updateDataSource: (id: string, patch: Record<string, unknown>) => void;
+  removeDataSource: (id: string) => void;
+
+  // 结构容器
+  updateControl: (nodeId: string, control: NodeControl | undefined) => void;
+
   undo: () => void;
   redo: () => void;
   markSaved: () => void;
@@ -151,6 +186,188 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
       craftJson: { ...state.dsl.craftJson, [parentId]: { ...parent, nodes } },
     };
     set(commit(state, next));
+  },
+
+  /**
+   * 拖拽落点。同容器内移动时下标要按「先摘除再插入」修正，
+   * 否则往后拖会永远差一位。
+   */
+  relocateNode(nodeId, parentId, index) {
+    const state = get();
+    if (nodeId === ROOT_NODE_ID) return;
+
+    const node = state.dsl.craftJson[nodeId];
+    const target = state.dsl.craftJson[parentId];
+    if (!node || !target) return;
+
+    // 不能把容器拖进自己的子树里，否则节点树会脱环成孤岛
+    let cursor: string | null | undefined = parentId;
+    while (cursor) {
+      if (cursor === nodeId) return;
+      cursor = state.dsl.craftJson[cursor]?.parent ?? null;
+    }
+
+    const oldParentId = node.parent ?? ROOT_NODE_ID;
+    const craftJson = { ...state.dsl.craftJson };
+
+    const oldParent = craftJson[oldParentId];
+    if (oldParent) {
+      craftJson[oldParentId] = {
+        ...oldParent,
+        nodes: oldParent.nodes.filter((id) => id !== nodeId),
+      };
+    }
+
+    const parentAfterRemoval = craftJson[parentId]!;
+    const bounded = Math.max(0, Math.min(index, parentAfterRemoval.nodes.length));
+    const nodes = [...parentAfterRemoval.nodes];
+    nodes.splice(bounded, 0, nodeId);
+
+    craftJson[parentId] = { ...parentAfterRemoval, nodes };
+    craftJson[nodeId] = { ...node, parent: parentId };
+
+    set(commit(state, { ...state.dsl, craftJson }));
+  },
+
+  insertNode(materialName, defaultProps, parentId, index) {
+    const state = get();
+    const parent = state.dsl.craftJson[parentId];
+    if (!parent) return;
+
+    const nodeId = createId(materialName.toLowerCase());
+    const nodes = [...parent.nodes];
+    nodes.splice(Math.max(0, Math.min(index, nodes.length)), 0, nodeId);
+
+    const next: FinalDsl = {
+      ...state.dsl,
+      craftJson: {
+        ...state.dsl.craftJson,
+        [nodeId]: {
+          type: { resolvedName: materialName },
+          isCanvas: false,
+          props: { ...defaultProps },
+          custom: {},
+          hidden: false,
+          nodes: [],
+          linkedNodes: {},
+          parent: parentId,
+        },
+        [parentId]: { ...parent, nodes },
+      },
+    };
+    set({ ...commit(state, next), selectedId: nodeId });
+  },
+
+  addEvent(nodeId, trigger, customEvent) {
+    const state = get();
+    const binding: EventBinding = {
+      id: createId('evt'),
+      nodeId,
+      trigger,
+      ...(customEvent ? { customEvent } : {}),
+      actions: [],
+    };
+    set(commit(state, { ...state.dsl, events: [...state.dsl.events, binding] }));
+  },
+
+  updateEvent(eventId, patch) {
+    const state = get();
+    const events = state.dsl.events.map((e) => (e.id === eventId ? { ...e, ...patch } : e));
+    set(commit(state, { ...state.dsl, events }));
+  },
+
+  removeEvent(eventId) {
+    const state = get();
+    set(commit(state, { ...state.dsl, events: state.dsl.events.filter((e) => e.id !== eventId) }));
+  },
+
+  addAction(eventId, action) {
+    const state = get();
+    const events = state.dsl.events.map((e) =>
+      e.id === eventId ? { ...e, actions: [...e.actions, action] } : e,
+    );
+    set(commit(state, { ...state.dsl, events }));
+  },
+
+  updateAction(eventId, index, patch) {
+    const state = get();
+    const events = state.dsl.events.map((e) => {
+      if (e.id !== eventId) return e;
+      const actions = e.actions.map((a, i) =>
+        i === index ? ({ ...a, ...patch } as DslAction) : a,
+      );
+      return { ...e, actions };
+    });
+    set(commit(state, { ...state.dsl, events }));
+  },
+
+  removeAction(eventId, index) {
+    const state = get();
+    const events = state.dsl.events.map((e) =>
+      e.id === eventId ? { ...e, actions: e.actions.filter((_, i) => i !== index) } : e,
+    );
+    set(commit(state, { ...state.dsl, events }));
+  },
+
+  moveAction(eventId, index, direction) {
+    const state = get();
+    const events = state.dsl.events.map((e) => {
+      if (e.id !== eventId) return e;
+      const target = index + direction;
+      if (target < 0 || target >= e.actions.length) return e;
+      const actions = [...e.actions];
+      [actions[index], actions[target]] = [actions[target]!, actions[index]!];
+      return { ...e, actions };
+    });
+    set(commit(state, { ...state.dsl, events }));
+  },
+
+  addDataSource(ds) {
+    const state = get();
+    if (state.dsl.dataSources.some((d) => d.id === ds.id)) return;
+    set(commit(state, { ...state.dsl, dataSources: [...state.dsl.dataSources, ds] }));
+  },
+
+  updateDataSource(id, patch) {
+    const state = get();
+    const dataSources = state.dsl.dataSources.map((d) =>
+      d.id === id ? ({ ...d, ...patch } as DataSource) : d,
+    );
+    set(commit(state, { ...state.dsl, dataSources }));
+  },
+
+  removeDataSource(id) {
+    const state = get();
+    // 同步摘掉引用它的刷新动作，避免留下发布时才报错的死引用
+    const events = state.dsl.events.map((e) => ({
+      ...e,
+      actions: e.actions.filter((a) => !(a.type === 'dataSource.refresh' && a.dataSourceId === id)),
+    }));
+    set(
+      commit(state, {
+        ...state.dsl,
+        dataSources: state.dsl.dataSources.filter((d) => d.id !== id),
+        events,
+      }),
+    );
+  },
+
+  updateControl(nodeId, control) {
+    const state = get();
+    const node = state.dsl.craftJson[nodeId];
+    if (!node) return;
+    const nextNode = { ...node };
+    if (control === undefined) {
+      delete nextNode.control;
+    } else {
+      nextNode.control = control;
+    }
+    set(
+      commit(state, {
+        ...state.dsl,
+        craftJson: { ...state.dsl.craftJson, [nodeId]: nextNode },
+      }),
+    );
   },
 
   undo() {

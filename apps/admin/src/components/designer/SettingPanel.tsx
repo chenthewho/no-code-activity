@@ -1,6 +1,8 @@
 import { Empty, Form, Input, InputNumber, Radio, Select, Switch, Tabs, ColorPicker } from 'antd';
 import type { JsonValue, MaterialMeta, PropSchemaItem } from '@nca/dsl';
 import { useDesignerStore } from '../../stores/designer';
+import { EventPanel } from './EventPanel';
+import { ControlPanel } from './ControlPanel';
 
 interface SettingPanelProps {
   metas: MaterialMeta[];
@@ -56,19 +58,8 @@ export function SettingPanel({ metas }: SettingPanelProps) {
       items={[
         { key: 'props', label: '属性', children: renderGroup(groups.props) },
         { key: 'style', label: '样式', children: renderGroup(groups.style) },
-        {
-          key: 'event',
-          label: '事件',
-          children:
-            meta.events.length === 0 ? (
-              <Empty description="该组件无可绑定事件" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <div style={{ padding: 8, color: '#888', fontSize: 12 }}>
-                可绑定事件：{meta.events.map((e) => e.label).join('、')}
-                <div style={{ marginTop: 8 }}>动作编排面板在 M2 阶段接入。</div>
-              </div>
-            ),
-        },
+        { key: 'event', label: '事件', children: <EventPanel meta={meta} /> },
+        { key: 'control', label: '逻辑', children: <ControlPanel nodeId={selectedId} /> },
       ]}
     />
   );

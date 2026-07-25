@@ -1,10 +1,35 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "jsx": "react-jsx",
-    "types": ["vite/client"],
-    "noEmit": true
+    "types": [
+      "vite/client"
+    ],
+    "noEmit": true,
+    "baseUrl": ".",
+  // paths 必须与 vite.config.ts 的 alias 保持一致：
+  // 二者一个管类型检查、一个管打包，不同步就会出现「typecheck 过了但运行时不符」
+    "paths": {
+      "@nca/materials/styles.css": [
+        "../../packages/materials/src/styles.css"
+      ],
+      "@nca/materials": [
+        "../../packages/materials/src"
+      ],
+      "@nca/dsl": [
+        "../../packages/dsl/src"
+      ],
+      "@nca/shared": [
+        "../../packages/shared/src"
+      ]
+    }
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }

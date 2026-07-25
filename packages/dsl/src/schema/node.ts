@@ -25,6 +25,8 @@ export const nodeControlSchema = z.object({
     .optional(),
 });
 
+export type NodeControl = z.infer<typeof nodeControlSchema>;
+
 export const craftNodeSchema = z.object({
   type: z.object({
     /** 物料名，必须能在 componentMap 里解析到 */

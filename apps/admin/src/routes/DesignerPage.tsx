@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Layout, Space, Spin, Tag, Tooltip, message, Modal, Input } from 'antd';
+import { Button, Layout, Space, Spin, Tabs, Tag, Tooltip, message, Modal, Input } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { activityApi, materialApi } from '../api';
@@ -8,6 +8,7 @@ import { MaterialPanel } from '../components/designer/MaterialPanel';
 import { SettingPanel } from '../components/designer/SettingPanel';
 import { IframeCanvasSurface } from '../components/designer/IframeCanvasSurface';
 import { NodeTree } from '../components/designer/NodeTree';
+import { DataSourcePanel } from '../components/designer/DataSourcePanel';
 
 const AUTOSAVE_DELAY = 1500;
 
@@ -146,12 +147,32 @@ export function DesignerPage() {
       </Layout.Header>
 
       <Layout>
-        <Layout.Sider width={260} theme="light" style={{ overflow: 'auto', padding: 8 }}>
-          <MaterialPanel metas={metas} />
-          <div style={{ marginTop: 16, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
-            <div style={{ marginBottom: 8, color: '#888', fontSize: 12 }}>节点树</div>
-            <NodeTree />
-          </div>
+        <Layout.Sider width={280} theme="light" style={{ overflow: 'auto' }}>
+          <Tabs
+            size="small"
+            centered
+            style={{ padding: '0 8px' }}
+            items={[
+              {
+                key: 'materials',
+                label: '组件',
+                children: (
+                  <>
+                    <MaterialPanel metas={metas} />
+                    <div style={{ marginTop: 16, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                      <div style={{ marginBottom: 8, color: '#888', fontSize: 12 }}>节点树</div>
+                      <NodeTree />
+                    </div>
+                  </>
+                ),
+              },
+              {
+                key: 'data',
+                label: `数据源${dsl.dataSources.length > 0 ? ` (${dsl.dataSources.length})` : ''}`,
+                children: <DataSourcePanel />,
+              },
+            ]}
+          />
         </Layout.Sider>
 
         <Layout.Content>
