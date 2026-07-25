@@ -1,0 +1,172 @@
+/* 物料基础样式。设计器与渲染器引同一份，保证画布所见即线上所得。 */
+
+.nca-page {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.nca-container {
+  box-sizing: border-box;
+}
+
+.nca-text {
+  box-sizing: border-box;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.nca-image {
+  max-width: 100%;
+}
+
+.nca-image--empty,
+.nca-swiper--empty,
+.nca-countdown--empty,
+.nca-rank--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: #999;
+  font-size: 24px;
+  background: repeating-linear-gradient(45deg, #f7f7f7, #f7f7f7 10px, #f0f0f0 10px, #f0f0f0 20px);
+  border-radius: 8px;
+}
+
+.nca-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  background-repeat: no-repeat;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s ease;
+}
+.nca-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.nca-button:disabled {
+  cursor: not-allowed;
+}
+
+.nca-modal--overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+}
+.nca-modal--editing {
+  position: relative;
+  margin: 16px 0;
+  padding: 28px 12px 12px;
+  border: 1px dashed #b37feb;
+  border-radius: 8px;
+}
+.nca-modal__editing-label {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  color: #b37feb;
+  font-size: 20px;
+}
+.nca-modal__panel {
+  position: relative;
+  box-sizing: border-box;
+  background-repeat: no-repeat;
+}
+.nca-modal__close {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 40px;
+  line-height: 1;
+  cursor: pointer;
+}
+.nca-modal__close img {
+  width: 100%;
+  height: 100%;
+}
+.nca-modal__close--inside-top-right {
+  top: 8px;
+  right: 8px;
+}
+.nca-modal__close--outside-bottom {
+  bottom: -80px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+}
+
+.nca-countdown {
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.nca-countdown__group {
+  display: inline-flex;
+  align-items: center;
+}
+.nca-countdown__sep {
+  padding: 0 6px;
+}
+
+.nca-swiper__slide img {
+  display: block;
+}
+.nca-swiper__indicator {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.nca-swiper__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transition: background-color 0.3s;
+}
+
+.nca-rank__row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.nca-rank__index {
+  flex: 0 0 56px;
+  text-align: center;
+  font-weight: bold;
+}
+.nca-rank__avatar {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #eee;
+}
+.nca-rank__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nca-rank__score {
+  flex: 0 0 auto;
+  font-weight: bold;
+}
