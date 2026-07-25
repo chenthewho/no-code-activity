@@ -11,16 +11,35 @@ import {
 import { createId, ROOT_NODE_ID } from '@nca/shared';
 import { create } from 'zustand';
 
+export interface DragPayload {
+  materialName: string;
+  defaultProps: Record<string, JsonValue>;
+  /** 从画布拖动已有节点时带上它的 id；从工具箱新建则为空 */
+  nodeId?: string;
+}
+
+export interface DropTargetInfo {
+  parentId: string;
+  index: number;
+}
+
 interface DesignerState {
   dsl: FinalDsl;
   selectedId: string | null;
   dirty: boolean;
+  /** 正在拖拽的物料/节点，非空时画布进入落点探测模式 */
+  dragging: DragPayload | null;
+  dropTarget: DropTargetInfo | null;
   /** 撤销/重做栈，存 DSL 快照 */
   past: FinalDsl[];
   future: FinalDsl[];
 
   load: (dsl: FinalDsl) => void;
   select: (nodeId: string | null) => void;
+  startDrag: (payload: DragPayload) => void;
+  setDropTarget: (target: DropTargetInfo | null) => void;
+  /** 释放拖拽：把落点应用成插入或移动，无落点则取消 */
+  endDrag: () => void;
   addNode: (materialName: string, defaultProps: Record<string, JsonValue>, parentId?: string) => void;
   updateProps: (nodeId: string, patch: Record<string, JsonValue>) => void;
   removeNode: (nodeId: string) => void;
@@ -84,15 +103,51 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   dsl: createEmptyDsl('pending', '未命名活动'),
   selectedId: null,
   dirty: false,
+  dragging: null,
+  dropTarget: null,
   past: [],
   future: [],
 
   load(dsl) {
-    set({ dsl, selectedId: null, dirty: false, past: [], future: [] });
+    set({ dsl, selectedId: null, dirty: false, past: [], future: [], dragging: null, dropTarget: null });
   },
 
   select(nodeId) {
     set({ selectedId: nodeId });
+  },
+
+  startDrag(payload) {
+    set({ dragging: payload, dropTarget: null });
+  },
+
+  setDropTarget(target) {
+    set({ dropTarget: target });
+  },
+
+  endDrag() {
+    const { dragging, dropTarget } = get();
+    set({ dragging: null, dropTarget: null });
+    if (!dragging) return;
+
+    // 没有落点 = 没拖到画布上，视作「原地点击」，追加到默认位置。
+    // 两条路径都收敛在这里，避免 click 与 drop 各插入一次。
+    if (!dropTarget) {
+      if (!dragging.nodeId) {
+        get().addNode(dragging.materialName, dragging.defaultProps);
+      }
+      return;
+    }
+
+    if (dragging.nodeId) {
+      get().relocateNode(dragging.nodeId, dropTarget.parentId, dropTarget.index);
+    } else {
+      get().insertNode(
+        dragging.materialName,
+        dragging.defaultProps,
+        dropTarget.parentId,
+        dropTarget.index,
+      );
+    }
   },
 
   addNode(materialName, defaultProps, parentId) {

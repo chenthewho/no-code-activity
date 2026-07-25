@@ -12,8 +12,12 @@ export function NodeTree() {
   // 新增节点后把新分支也展开，运营不用每次手动点开
   const allKeys = Object.keys(dsl.craftJson);
   useEffect(() => {
-    setExpandedKeys((prev) => [...new Set([...prev, ...allKeys])]);
-    // allKeys 每次渲染都是新数组，用长度做依赖避免无限循环
+    setExpandedKeys((prev) => {
+      const merged = [...new Set([...prev, ...allKeys])];
+      // 没有新键就返回原引用，否则每轮渲染都换新数组会触发多余重渲染
+      return merged.length === prev.length ? prev : merged;
+    });
+    // allKeys 每次渲染都是新数组，用长度做依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allKeys.length]);
 

@@ -15,6 +15,15 @@ export const PREVIEW_MESSAGE = {
   META: 'RENDERER_META_INIT',
   /** R → D：预览态点选节点，反向联动画布选中 */
   SELECT: 'NODE_SELECTED',
+
+  /** D → R：把设计器侧的选中态同步到画布，画布据此描边 */
+  EDITOR_SELECT: 'EDITOR_SELECT',
+  /** D → R：拖拽经过画布，带 iframe 内坐标，请画布算出落点 */
+  DROP_PROBE: 'EDITOR_DROP_PROBE',
+  /** D → R：拖拽结束/离开，清掉落点提示 */
+  DROP_END: 'EDITOR_DROP_END',
+  /** R → D：算出的落点（父容器 + 下标），拖拽释放时据此插入 */
+  DROP_TARGET: 'EDITOR_DROP_TARGET',
 } as const;
 
 export interface PreviewEnvelope {

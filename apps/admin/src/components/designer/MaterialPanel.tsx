@@ -11,7 +11,7 @@ const CATEGORY_LABEL: Record<MaterialCategory, string> = {
 };
 
 export function MaterialPanel({ metas }: { metas: MaterialMeta[] }) {
-  const addNode = useDesignerStore((s) => s.addNode);
+  const startDrag = useDesignerStore((s) => s.startDrag);
 
   // Page 是根容器，不该出现在工具箱里被再拖一个
   const usable = metas.filter((m) => m.name !== 'Page');
@@ -39,13 +39,17 @@ export function MaterialPanel({ metas }: { metas: MaterialMeta[] }) {
             {group.items.map((meta) => (
               <div
                 key={meta.name}
-                title={meta.description}
-                onClick={() => addNode(meta.name, meta.defaultProps)}
+                title={`${meta.description ?? meta.title}（拖到画布可精确放置，点击追加到末尾）`}
+                // 用原生鼠标事件而不是 HTML5 drag：拖拽要跨进 iframe，
+                // dataTransfer 在跨源 iframe 里读不可靠，坐标探针方案更稳。
+                // 落点判定与「原地点击追加」都收敛在 endDrag 里，
+                // 避免拖出去又拖回来释放时 click 和 drop 各插一个。
+                onMouseDown={() => startDrag({ materialName: meta.name, defaultProps: meta.defaultProps })}
                 style={{
                   padding: '12px 8px',
                   textAlign: 'center',
                   fontSize: 12,
-                  cursor: 'pointer',
+                  cursor: 'grab',
                   background: '#fafafa',
                   border: '1px solid #f0f0f0',
                   borderRadius: 6,

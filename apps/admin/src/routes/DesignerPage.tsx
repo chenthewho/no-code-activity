@@ -58,6 +58,13 @@ export function DesignerPage() {
     return () => window.clearTimeout(timerRef.current);
   }, [dirty, dsl]);
 
+  // 拖拽在任何位置释放都要收尾：松手在画布外也得清掉落点提示与拖拽态
+  useEffect(() => {
+    const onUp = () => useDesignerStore.getState().endDrag();
+    document.addEventListener('mouseup', onUp);
+    return () => document.removeEventListener('mouseup', onUp);
+  }, []);
+
   // 离开前拦一道，未保存的编辑不该悄悄丢掉
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {

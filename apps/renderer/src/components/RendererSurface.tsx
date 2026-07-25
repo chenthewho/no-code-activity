@@ -3,6 +3,7 @@ import type { FinalDsl } from '@nca/dsl';
 import { RuntimeProvider, useRuntime } from '../runtime/RuntimeProvider';
 import { CanvasRenderer } from './CanvasRenderer';
 import { ToastLayer } from './ToastLayer';
+import { EditorOverlay } from './EditorOverlay';
 
 export interface RendererSurfaceProps {
   dsl: FinalDsl;
@@ -55,6 +56,7 @@ function PageFrame() {
     >
       <CanvasRenderer />
       <ToastLayer />
+      <EditorOverlay />
     </div>
   );
 }
