@@ -6,29 +6,70 @@
 
 ```
 apps/
-  admin/      管理后台 + 设计器（React + Vite + TanStack Router）
+  admin/      管理后台 + 设计器（React + Vite + TanStack Router + antd）
   renderer/   C 端活动页运行时（独立构建，产物发 CDN）
-  server/     NestJS 后端
+  server/     NestJS 后端（Prisma + MySQL + Redis）
 packages/
-  shared/     通用类型 / 常量 / 工具
+  shared/     通用类型 / 常量 / 权限码字典
   dsl/        DSL 类型定义 + zod 校验 + 版本迁移（协议中枢）
   materials/  物料组件库（设计器与渲染器共用）
 ```
 
-设计器与渲染器**共用同一份 `materials` 与 `dsl`**，这是保证「画布所见 = 线上所得」的前提。
+三条不可动摇的架构约定：
 
-## 开发
+1. **物料只有一份实现**。`packages/materials` 同时被设计器画布和线上渲染器消费，
+   `componentMap`、工具箱列表、DSL 校验白名单全部从同一张物料总表派生。
+2. **画布是真实渲染器**。设计器用 iframe 承载 `apps/renderer`，预览跑的就是线上代码，
+   不存在「画布好看、线上错位」。
+3. **发布产物不可变**。每次发布生成版本快照，回滚只切 `publishedVersion` 指针。
+
+## 本地启动
 
 ```bash
-nvm use            # Node 22（见 .nvmrc，最低要求 20.11）
+nvm use                      # Node 22（见 .nvmrc，最低 20.11）
 pnpm install
-pnpm dev           # 全部应用
-pnpm build
+
+docker compose up -d         # MySQL(3307) + Redis(6381)
+cp apps/server/.env.example apps/server/.env
+pnpm --filter @nca/server prisma:push
+pnpm --filter @nca/server seed     # 权限、角色、admin 账号、物料注册表
+
+pnpm dev                     # 或分别启动三个服务
+```
+
+| 服务 | 地址 | 说明 |
+|---|---|---|
+| Server | http://localhost:3100/api/v1 | Swagger 在 `/api/v1/docs` |
+| Admin | http://localhost:5173 | 默认账号 `admin` / `admin123` |
+| Renderer | http://localhost:5180 | 活动页 `?id=<activityId>` |
+
+> 端口说明：3306 / 6379 / 3000 / 5174 在开发机上常被其它项目占用，
+> 本项目统一偏移到 3307 / 6381 / 3100 / 5180。渲染器开了 `strictPort`——
+> 设计器 iframe 按固定地址加载它，端口漂移必须直接失败而不是让画布空白。
+
+## 常用命令
+
+```bash
+pnpm build          # 全量构建
+pnpm test           # 全量测试（55 项）
 pnpm typecheck
 pnpm lint
-pnpm test
 ```
+
+## 已完成
+
+- **M0 基建**：monorepo、CI 配置、TypeScript strict、ESLint 9 flat config
+- **DSL 协议**：FinalDSL / 物料协议 / 动作协议 / manifest，含引用完整性校验与版本迁移链
+- **物料库**：Page、Container、Text、Image、Button、Modal、Countdown、Swiper、RankList
+- **后端**：RBAC、活动 CRUD、草稿自动保存、发布与回滚、模板、物料注册表、C 端 runtime 接口
+- **渲染器**：递归渲染、condition/loop 容器、受限表达式求值、事件动作、数据源引擎、宿主适配层
+- **设计器**：三栏布局、iframe 画布、propsSchema 驱动的设置器、撤销重做、自动保存、发布
+
+## 下一步（M2）
+
+事件编排面板、数据源配置面板、模板中心完善、拖拽排序、资源上传（COS 直传）。
+详见 [开发规划](docs/development-plan.md)。
 
 ## 文档
 
-- [开发规划](docs/development-plan.md) — 架构、协议、里程碑
+- [开发规划](docs/development-plan.md) — 架构、协议、里程碑与关键决策
