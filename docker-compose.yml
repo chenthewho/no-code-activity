@@ -1,0 +1,31 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: nca-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: no_code_activity
+    # 宿主机 3306/6379 常被其它项目占用，这里统一偏移端口，互不干扰
+    ports:
+      - '3307:3306'
+    volumes:
+      - nca-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-uroot', '-proot']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: nca-redis
+    restart: unless-stopped
+    ports:
+      - '6381:6379'
+    volumes:
+      - nca-redis-data:/data
+
+volumes:
+  nca-mysql-data:
+  nca-redis-data:

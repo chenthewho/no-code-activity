@@ -1,0 +1,278 @@
+// 零代码活动页平台数据模型
+// 设计原则：发布产物不可变（ActivityVersion 快照），草稿可覆盖（DslDraft 单行）
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- RBAC ----------
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String? // SSO 用户为空
+  nickname  String
+  avatar    String?
+  email     String?
+  ssoId     String?  @unique
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roles      UserRole[]
+  activities Activity[] @relation("ActivityOwner")
+
+  @@map("user")
+}
+
+model Role {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  remark    String?
+  createdAt DateTime @default(now())
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("role")
+}
+
+model Permission {
+  id     String  @id @default(cuid())
+  code   String  @unique // 与 @nca/shared 的 PERMISSION 字典一致
+  name   String
+  module String?
+
+  roles RolePermission[]
+
+  @@map("permission")
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_role")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permission")
+}
+
+// ---------- 活动 ----------
+
+enum ActivityStatus {
+  draft
+  published
+  offline
+}
+
+model Activity {
+  id          String         @id @default(cuid())
+  title       String
+  description String?        @db.Text
+  cover       String?
+  status      ActivityStatus @default(draft)
+  startTime   DateTime?
+  endTime     DateTime?
+
+  /// 当前线上版本号，指向 ActivityVersion.version；回滚只改这个指针
+  publishedVersion Int?
+
+  ownerId String
+  owner   User   @relation("ActivityOwner", fields: [ownerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  draft       DslDraft?
+  versions    ActivityVersion[]
+  assets      Asset[]
+  prizes      Prize[]
+  channels    Channel[]
+  submissions FormSubmission[]
+
+  @@index([status, updatedAt])
+  @@index([ownerId])
+  @@map("activity")
+}
+
+/// 草稿：单活动单行，自动保存直接覆盖
+model DslDraft {
+  activityId String   @id
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  dsl        Json
+  updatedBy  String?
+  updatedAt  DateTime @updatedAt
+
+  @@map("dsl_draft")
+}
+
+/// 发布快照：一经写入不再修改，是回滚与审计的依据
+model ActivityVersion {
+  id         String   @id @default(cuid())
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  version    Int
+  dsl        Json
+  dslUrl     String?
+  manifestUrl String?
+  changelog  String?  @db.Text
+  createdBy  String?
+  createdAt  DateTime @default(now())
+
+  @@unique([activityId, version])
+  @@index([activityId, createdAt])
+  @@map("activity_version")
+}
+
+// ---------- 模板与物料 ----------
+
+model Template {
+  id          String   @id @default(cuid())
+  title       String
+  cover       String?
+  description String?  @db.Text
+  category    String?
+  dsl         Json
+  favCount    Int      @default(0)
+  useCount    Int      @default(0)
+  enabled     Boolean  @default(true)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category, enabled])
+  @@map("template")
+}
+
+/// 物料注册表。代码里的 materials 包是实现，这里存可用性与灰度开关
+model Material {
+  name        String   @id
+  version     String
+  title       String
+  category    String
+  meta        Json
+  enabled     Boolean  @default(true)
+  sort        Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@map("material")
+}
+
+// ---------- 资源 ----------
+
+model Asset {
+  id         String   @id @default(cuid())
+  activityId String?
+  activity   Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  url        String    @db.VarChar(1024)
+  type       String
+  size       Int       @default(0)
+  hash       String?
+  width      Int?
+  height     Int?
+  uploadedBy String?
+  createdAt  DateTime  @default(now())
+
+  @@index([activityId])
+  @@index([hash])
+  @@map("asset")
+}
+
+// ---------- 业务能力 ----------
+
+model Prize {
+  id          String   @id @default(cuid())
+  activityId  String
+  activity    Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  name        String
+  image       String?
+  /// 万分比，10000 表示 100%
+  probability Int      @default(0)
+  total       Int      @default(0)
+  remaining   Int      @default(0)
+  /// 单用户可中奖上限，0 不限
+  limitPerUser Int     @default(0)
+  sort        Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  records PrizeRecord[]
+
+  @@index([activityId])
+  @@map("prize")
+}
+
+model PrizeRecord {
+  id         String   @id @default(cuid())
+  activityId String
+  prizeId    String
+  prize      Prize    @relation(fields: [prizeId], references: [id])
+  userId     String
+  status     String   @default("won") // won / shipped / expired
+  createdAt  DateTime @default(now())
+
+  @@index([activityId, userId])
+  @@index([prizeId])
+  @@map("prize_record")
+}
+
+model FormSubmission {
+  id         String   @id @default(cuid())
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  formNodeId String
+  userId     String?
+  data       Json
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([activityId, createdAt])
+  @@map("form_submission")
+}
+
+model Channel {
+  id         String   @id @default(cuid())
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  name       String
+  code       String
+  /// 渠道透传参数，落地页 query 上下文可取
+  params     Json?
+  createdAt  DateTime @default(now())
+
+  @@unique([activityId, code])
+  @@map("channel")
+}
+
+model AnalyticsEvent {
+  id         BigInt   @id @default(autoincrement())
+  activityId String
+  version    Int?
+  nodeId     String?
+  event      String // expose / click / convert
+  userId     String?
+  channel    String?
+  host       String?
+  props      Json?
+  createdAt  DateTime @default(now())
+
+  @@index([activityId, event, createdAt])
+  @@map("analytics_event")
+}
