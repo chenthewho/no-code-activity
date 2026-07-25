@@ -30,7 +30,7 @@ const envSchema = z.object({
   PUBLISH_LOCAL_DIR: z.string().default('./.publish'),
 
   /** Renderer 产物地址，写进 manifest.entry */
-  RENDERER_ENTRY_JS: z.string().default('http://localhost:5174/src/main.tsx'),
+  RENDERER_ENTRY_JS: z.string().default('http://localhost:5180/src/main.tsx'),
   RENDERER_ENTRY_CSS: z.string().default(''),
 });
 

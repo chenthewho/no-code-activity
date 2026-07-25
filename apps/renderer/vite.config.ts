@@ -20,7 +20,9 @@ export default defineConfig({
       { find: '@nca/shared', replacement: pkg('shared') },
     ],
   },
-  server: { port: 5174 },
+  // strictPort：设计器 iframe 按固定地址加载渲染器，端口被占时必须直接失败，
+  // 而不是悄悄漂到别的端口让画布空白
+  server: { port: 5180, strictPort: true },
   build: {
     // 活动页体积敏感：产物带 hash，便于 manifest.entry 引用与长缓存
     rollupOptions: {

@@ -1,0 +1,93 @@
+import { useEffect, useRef, useState } from 'react';
+import { Spin } from 'antd';
+import type { FinalDsl } from '@nca/dsl';
+
+const RENDERER_ORIGIN = import.meta.env.VITE_RENDERER_ORIGIN ?? 'http://localhost:5180';
+
+const MESSAGE = {
+  READY: 'RENDERER_READY',
+  DSL: 'CRAFT_JSON_PREVIEW',
+  SELECT: 'NODE_SELECTED',
+} as const;
+
+interface Props {
+  dsl: FinalDsl;
+  onSelectNode?: (nodeId: string) => void;
+  designWidth?: number;
+}
+
+/**
+ * 画布用 iframe 承载真实的 Renderer。
+ *
+ * 好处是双重的：样式天然隔离（后台的 antd 不会污染活动页），
+ * 且预览跑的就是线上那份渲染代码——设计器不需要另写一套预览组件，
+ * 也就不存在「画布好看、线上错位」的漂移。
+ *
+ * 渲染器跑在独立端口，已是跨源隔离，因此不加 sandbox：
+ * allow-scripts 而不带 allow-same-origin 会把 iframe 变成不透明源，
+ * 反而让指定 targetOrigin 的 postMessage 失效。真正的管控是下面的 targetOrigin。
+ */
+export function IframeCanvasSurface({ dsl, onSelectNode, designWidth = 375 }: Props) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [ready, setReady] = useState(false);
+  const seqRef = useRef(0);
+
+  useEffect(() => {
+    const handle = (event: MessageEvent<{ type?: string; payload?: { nodeId?: string } }>) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const type = event.data?.type;
+      if (type === MESSAGE.READY) {
+        setReady(true);
+      } else if (type === MESSAGE.SELECT && event.data.payload?.nodeId) {
+        onSelectNode?.(event.data.payload.nodeId);
+      }
+    };
+    window.addEventListener('message', handle);
+    return () => window.removeEventListener('message', handle);
+  }, [onSelectNode]);
+
+  // DSL 变更下发。带自增 seq，渲染器据此丢弃乱序到达的旧消息
+  useEffect(() => {
+    if (!ready) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: MESSAGE.DSL, payload: dsl, seq: ++seqRef.current },
+      RENDERER_ORIGIN,
+    );
+  }, [dsl, ready]);
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        height: '100%',
+        padding: 16,
+        overflow: 'auto',
+        background: '#f0f2f5',
+      }}
+    >
+      <div
+        style={{
+          position: 'relative',
+          width: designWidth,
+          minHeight: 667,
+          background: '#fff',
+          boxShadow: '0 2px 12px rgba(0,0,0,.12)',
+        }}
+      >
+        {!ready && (
+          <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+            <Spin tip="画布加载中" />
+          </div>
+        )}
+        <iframe
+          ref={iframeRef}
+          title="设计器画布"
+          src={`${RENDERER_ORIGIN}/?preview=1`}
+          style={{ display: 'block', width: '100%', height: 667, border: 'none' }}
+        />
+      </div>
+    </div>
+  );
+}

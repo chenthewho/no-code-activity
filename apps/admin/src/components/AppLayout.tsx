@@ -1,0 +1,80 @@
+import { Layout, Menu, Dropdown, Avatar, Spin } from 'antd';
+import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router';
+import { PERMISSION } from '@nca/shared';
+import { useAuthStore } from '../stores/auth';
+
+const { Header, Sider, Content } = Layout;
+
+export function AppLayout() {
+  const { user, logout, can, initializing } = useAuthStore();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  if (initializing) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  // 菜单按权限码过滤，没权限的入口直接不渲染，而不是点进去再报错
+  const items = [
+    can(PERMISSION.ACTIVITY_VIEW) && {
+      key: '/activities',
+      label: <Link to="/activities">活动管理</Link>,
+    },
+    can(PERMISSION.TEMPLATE_VIEW) && {
+      key: '/templates',
+      label: <Link to="/templates">模板中心</Link>,
+    },
+  ].filter(Boolean) as { key: string; label: React.ReactNode }[];
+
+  const selected = items.find((item) => location.pathname.startsWith(item.key))?.key;
+
+  return (
+    <Layout style={{ minHeight: '100vh' }}>
+      <Header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingInline: 24,
+        }}
+      >
+        <div style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>活动运营平台</div>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'roles', label: `角色：${user?.roles.join('、') || '无'}`, disabled: true },
+              { type: 'divider' as const },
+              {
+                key: 'logout',
+                label: '退出登录',
+                onClick: () => {
+                  logout();
+                  void navigate({ to: '/login', search: { redirect: undefined } });
+                },
+              },
+            ],
+          }}
+        >
+          <div style={{ color: '#fff', cursor: 'pointer' }}>
+            <Avatar size="small" src={user?.avatar} style={{ marginRight: 8 }}>
+              {user?.nickname?.[0]}
+            </Avatar>
+            {user?.nickname}
+          </div>
+        </Dropdown>
+      </Header>
+      <Layout>
+        <Sider width={200} theme="light">
+          <Menu mode="inline" selectedKeys={selected ? [selected] : []} items={items} />
+        </Sider>
+        <Content style={{ padding: 24, background: '#f5f5f5' }}>
+          <Outlet />
+        </Content>
+      </Layout>
+    </Layout>
+  );
+}
