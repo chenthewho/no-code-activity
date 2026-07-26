@@ -1,7 +1,15 @@
 import { Button, Card, Collapse, Dropdown, Empty, Form, Input, InputNumber, Select, Space, Switch, Tag } from 'antd';
 import type { DslAction, DslActionType, MaterialMeta } from '@nca/dsl';
 import { useDesignerStore } from '../../stores/designer';
-import { ACTION_DEFS, ACTION_DEF_MAP, createAction, describeAction, type ActionFieldDef } from './action-schema';
+import {
+  ACTION_DEFS,
+  ACTION_DEF_MAP,
+  createAction,
+  describeAction,
+  isRequiredField,
+  missingFields,
+  type ActionFieldDef,
+} from './action-schema';
 
 const TRIGGER_LABEL: Record<string, string> = {
   onClick: '点击时',
@@ -83,6 +91,11 @@ export function EventPanel({ meta }: { meta: MaterialMeta }) {
                   <span style={{ fontSize: 12 }}>
                     <Tag color="default">{index + 1}</Tag>
                     {describeAction(action)}
+                    {missingFields(action).length > 0 && (
+                      <Tag color="error" style={{ marginLeft: 6 }}>
+                        待完善 {missingFields(action).length}
+                      </Tag>
+                    )}
                   </span>
                 ),
                 extra: (
@@ -177,15 +190,31 @@ function ActionForm({
       {def.description && (
         <div style={{ marginBottom: 8, color: '#999', fontSize: 12 }}>{def.description}</div>
       )}
-      {def.fields.map((field) => (
-        <Form.Item key={field.key} label={field.label} extra={field.help} style={{ marginBottom: 10 }}>
-          <ActionField
-            field={field}
-            value={record[field.key]}
-            onChange={(value) => onChange({ [field.key]: value })}
-          />
-        </Form.Item>
-      ))}
+      {def.fields.map((field) => {
+        // 必填且为空时就地标红，而不是等保存/发布时抛一串 zod 路径给运营看
+        const required = isRequiredField(action.type, field.key);
+        const value = record[field.key];
+        const empty = value === undefined || value === null || value === '';
+        const invalid = required && empty;
+
+        return (
+          <Form.Item
+            key={field.key}
+            label={field.label}
+            required={required}
+            validateStatus={invalid ? 'error' : undefined}
+            help={invalid ? `请填写${field.label}，留空将无法发布` : field.help}
+            style={{ marginBottom: 10 }}
+          >
+            <ActionField
+              field={field}
+              value={value}
+              invalid={invalid}
+              onChange={(next) => onChange({ [field.key]: next })}
+            />
+          </Form.Item>
+        );
+      })}
       <Form.Item label="执行条件" extra="留空则始终执行" style={{ marginBottom: 0 }}>
         <Input
           size="small"
@@ -201,13 +230,16 @@ function ActionForm({
 function ActionField({
   field,
   value,
+  invalid,
   onChange,
 }: {
   field: ActionFieldDef;
   value: unknown;
+  invalid?: boolean;
   onChange: (value: unknown) => void;
 }) {
   const dsl = useDesignerStore((s) => s.dsl);
+  const status = invalid ? ('error' as const) : undefined;
 
   switch (field.editor) {
     case 'number':
@@ -220,6 +252,7 @@ function ActionField({
       return (
         <Select
           style={{ width: '100%' }}
+          status={status}
           value={value as string}
           options={field.options}
           onChange={onChange}
@@ -238,6 +271,7 @@ function ActionField({
       return (
         <Select
           style={{ width: '100%' }}
+          status={status}
           value={(value as string) || undefined}
           options={options}
           onChange={onChange}
@@ -252,6 +286,7 @@ function ActionField({
       return (
         <Select
           style={{ width: '100%' }}
+          status={status}
           value={(value as string) || undefined}
           options={options}
           onChange={onChange}
@@ -291,6 +326,7 @@ function ActionField({
     default:
       return (
         <Input
+          status={status}
           value={value as string}
           placeholder={field.placeholder}
           onChange={(e) => onChange(e.target.value)}

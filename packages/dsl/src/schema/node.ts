@@ -16,7 +16,8 @@ export const nodeControlSchema = z.object({
   /** 列表渲染：数据源或表达式，配合 itemAlias 在子树中取值 */
   loop: z
     .object({
-      source: z.string().min(1),
+      // 允许空串：开关刚打开时还没选数据来源，草稿要存得下（见 validate.ts 的 mode）
+      source: z.string(),
       itemAlias: z.string().min(1).default('item'),
       indexAlias: z.string().min(1).default('index'),
       /** 稳定 key 的取值表达式，缺省用 index（列表会重排时务必配置） */

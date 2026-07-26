@@ -2,6 +2,16 @@ import { z } from 'zod';
 import { assetUrl, httpUrl, identifier, jsonValue } from './primitives';
 
 /**
+ * 「形状」与「完整性」是两件事，这里只管形状。
+ *
+ * 运营在设计器里是渐进填写的：先加一个「打开弹窗」动作，再回头选目标弹窗。
+ * 如果 schema 直接要求非空，草稿就会在填到一半时存不进去，编辑流程直接断掉。
+ * 所以可填字段一律允许空串，「必须填」交给 validate.ts 的完整性检查——
+ * 发布时报 error 拦住，草稿期只报 warning 提示。
+ */
+const fillable = <T extends z.ZodType>(schema: T) => schema.or(z.literal(''));
+
+/**
  * 动作协议，对应架构图「动作与配置 (Actions)」。
  *
  * 刻意做成封闭的可辨识联合而不是「执行一段脚本」：DSL 虽然来自自家服务端，
@@ -18,14 +28,14 @@ const actionBase = {
 const navigate = z.object({
   ...actionBase,
   type: z.literal('navigate'),
-  url: httpUrl,
+  url: fillable(httpUrl),
   target: z.enum(['_self', '_blank']).default('_self'),
 });
 
 const modalOpen = z.object({
   ...actionBase,
   type: z.literal('modal.open'),
-  modalId: identifier,
+  modalId: fillable(identifier),
   /** 打开弹窗时注入的局部数据，可用表达式 */
   payload: z.record(z.string(), jsonValue).optional(),
 });
@@ -34,13 +44,13 @@ const modalClose = z.object({
   ...actionBase,
   type: z.literal('modal.close'),
   /** 省略则关闭最顶层弹窗 */
-  modalId: identifier.optional(),
+  modalId: fillable(identifier).optional(),
 });
 
 const toast = z.object({
   ...actionBase,
   type: z.literal('toast'),
-  message: z.string().min(1),
+  message: z.string(),
   level: z.enum(['info', 'success', 'warning', 'error']).default('info'),
   duration: z.number().int().min(500).max(10_000).default(2000),
 });
@@ -48,29 +58,29 @@ const toast = z.object({
 const stateSet = z.object({
   ...actionBase,
   type: z.literal('state.set'),
-  key: z.string().min(1),
+  key: z.string(),
   value: jsonValue,
 });
 
 const dataSourceRefresh = z.object({
   ...actionBase,
   type: z.literal('dataSource.refresh'),
-  dataSourceId: identifier,
+  dataSourceId: fillable(identifier),
 });
 
 /** 向指定组件派发自定义事件，对应图中 component.triggerEvent */
 const componentTrigger = z.object({
   ...actionBase,
   type: z.literal('component.trigger'),
-  nodeId: identifier,
-  event: z.string().min(1),
+  nodeId: fillable(identifier),
+  event: z.string(),
   payload: z.record(z.string(), jsonValue).optional(),
 });
 
 const lotteryDraw = z.object({
   ...actionBase,
   type: z.literal('lottery.draw'),
-  prizePoolId: z.string().min(1),
+  prizePoolId: z.string(),
   /** 中奖/未中奖后续动作，由 EventBinder 在接口返回后串联 */
   onWin: z.array(identifier).default([]),
   onLose: z.array(identifier).default([]),
@@ -80,13 +90,13 @@ const lotteryDraw = z.object({
 const appointment = z.object({
   ...actionBase,
   type: z.literal('appointment'),
-  sceneId: z.string().min(1),
+  sceneId: z.string(),
 });
 
 const formSubmit = z.object({
   ...actionBase,
   type: z.literal('form.submit'),
-  formNodeId: identifier,
+  formNodeId: fillable(identifier),
 });
 
 const share = z.object({
@@ -101,7 +111,7 @@ const share = z.object({
 const gameDownload = z.object({
   ...actionBase,
   type: z.literal('game.download'),
-  gameId: z.string().min(1),
+  gameId: z.string(),
 });
 
 const login = z.object({
@@ -113,7 +123,7 @@ const login = z.object({
 const sdkInvoke = z.object({
   ...actionBase,
   type: z.literal('sdk.invoke'),
-  method: z.string().min(1).max(64),
+  method: z.string().max(64),
   params: z.record(z.string(), jsonValue).default({}),
 });
 
@@ -150,3 +160,42 @@ export const eventBindingSchema = z.object({
 });
 
 export type EventBinding = z.infer<typeof eventBindingSchema>;
+
+/**
+ * 各动作的必填字段。发布时缺失即报错，草稿期只提示。
+ *
+ * 放在协议包里而不是设计器里：表单的「必填」标记与后端的发布校验
+ * 读的是同一份清单，不可能出现「界面没标必填、发布却被拦」的错位。
+ */
+export const REQUIRED_ACTION_FIELDS: Record<DslActionType, string[]> = {
+  navigate: ['url'],
+  'modal.open': ['modalId'],
+  'modal.close': [],
+  toast: ['message'],
+  'state.set': ['key'],
+  'dataSource.refresh': ['dataSourceId'],
+  'component.trigger': ['nodeId', 'event'],
+  'lottery.draw': ['prizePoolId'],
+  appointment: ['sceneId'],
+  'form.submit': ['formNodeId'],
+  share: [],
+  login: [],
+  'game.download': ['gameId'],
+  'sdk.invoke': ['method'],
+};
+
+/** 字段名 → 面板上的中文标签，用于把校验问题说成人话 */
+export const ACTION_FIELD_LABELS: Record<string, string> = {
+  url: '目标地址',
+  modalId: '目标弹窗',
+  message: '提示文案',
+  key: '状态键名',
+  dataSourceId: '数据源',
+  nodeId: '目标组件',
+  event: '事件名',
+  prizePoolId: '奖池 ID',
+  sceneId: '场景 ID',
+  formNodeId: '表单节点',
+  gameId: '游戏 ID',
+  method: '方法名',
+};

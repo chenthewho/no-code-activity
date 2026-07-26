@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Layout, Space, Spin, Tabs, Tag, Tooltip, message, Modal, Input } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
+import { validateFinalDsl } from '@nca/dsl';
 import { activityApi, materialApi } from '../api';
 import { useDesignerStore } from '../stores/designer';
 import { MaterialPanel } from '../components/designer/MaterialPanel';
@@ -9,6 +10,7 @@ import { SettingPanel } from '../components/designer/SettingPanel';
 import { IframeCanvasSurface } from '../components/designer/IframeCanvasSurface';
 import { NodeTree } from '../components/designer/NodeTree';
 import { DataSourcePanel } from '../components/designer/DataSourcePanel';
+import { IssueIndicator, formatIssues } from '../components/designer/IssuePanel';
 
 const AUTOSAVE_DELAY = 1500;
 
@@ -39,9 +41,8 @@ export function DesignerPage() {
     onSuccess: (result) => {
       markSaved();
       setSavedAt(new Date(result.updatedAt).toLocaleTimeString('zh-CN'));
-      result.issues
-        .filter((i) => i.level === 'warning')
-        .forEach((i) => void message.warning(`${i.path}: ${i.message}`));
+      // warning 不再逐条弹窗：编辑中「还没填完」是常态，
+      // 每敲一次键弹一串提示只会把人淹没。顶栏的待完善标签常驻汇总即可。
     },
     onError: (err: Error) => void message.error(`保存失败：${err.message}`),
   });
@@ -96,10 +97,37 @@ export function DesignerPage() {
         ),
       });
     },
-    onError: (err: Error) => void message.error(`发布失败：${err.message}`),
+    onError: (err: Error & { errors?: { level: string; message: string; location?: string }[] }) => {
+      const detail = err.errors?.filter((e) => e.level === 'error') ?? [];
+      if (detail.length > 0) {
+        Modal.error({
+          title: '发布未通过校验',
+          content: (
+            <ul style={{ paddingLeft: 18, margin: 0 }}>
+              {detail.map((e, i) => (
+                <li key={i}>{e.location ? `${e.location}：${e.message}` : e.message}</li>
+              ))}
+            </ul>
+          ),
+        });
+        return;
+      }
+      void message.error(`发布失败：${err.message}`);
+    },
   });
 
   const handleSelectFromCanvas = useCallback((nodeId: string) => select(nodeId), [select]);
+
+  /**
+   * 本地跑一遍发布级校验，把「发布前必须补齐」的项即时呈现在顶栏。
+   * 与后端调用的是 @nca/dsl 里同一个 validateFinalDsl，规则不可能不一致。
+   */
+  const pendingIssues = useMemo(() => {
+    const result = validateFinalDsl(dsl, { mode: 'publish' });
+    return result.success ? result.issues : result.issues;
+  }, [dsl]);
+
+  const blockingIssues = pendingIssues.filter((i) => i.level === 'error');
 
   if (metaLoading || draftLoading) {
     return (
@@ -128,10 +156,11 @@ export function DesignerPage() {
           </Button>
           <strong>{dsl.meta.title}</strong>
           {dirty ? (
-            <Tag color="warning">未保存</Tag>
+            <Tag color="processing">保存中…</Tag>
           ) : (
             <Tag color="success">{savedAt ? `已保存 ${savedAt}` : '已保存'}</Tag>
           )}
+          <IssueIndicator issues={blockingIssues} />
         </Space>
         <Space>
           <Tooltip title="撤销">
@@ -147,7 +176,28 @@ export function DesignerPage() {
           <Button size="small" loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
             保存
           </Button>
-          <Button type="primary" size="small" onClick={() => setPublishing(true)}>
+          <Button
+            type="primary"
+            size="small"
+            onClick={() => {
+              if (blockingIssues.length > 0) {
+                Modal.warning({
+                  title: `还有 ${blockingIssues.length} 处配置待补齐`,
+                  content: (
+                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                      {formatIssues(blockingIssues).map((text, i) => (
+                        <li key={i} style={{ marginBottom: 4 }}>
+                          {text}
+                        </li>
+                      ))}
+                    </ul>
+                  ),
+                });
+                return;
+              }
+              setPublishing(true);
+            }}
+          >
             发布
           </Button>
         </Space>

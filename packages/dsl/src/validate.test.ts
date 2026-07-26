@@ -94,6 +94,83 @@ describe('validateFinalDsl', () => {
   });
 });
 
+describe('草稿 vs 发布：分级校验', () => {
+  function dslWithEmptyToast() {
+    const dsl = baseDsl();
+    dsl.events = [
+      {
+        id: 'e1',
+        nodeId: 'btn_1',
+        trigger: 'onClick',
+        actions: [{ type: 'toast', message: '', level: 'info', duration: 2000 }],
+      },
+    ];
+    return dsl;
+  }
+
+  it('草稿模式：必填项没填只报 warning，草稿仍能保存', () => {
+    const result = validateFinalDsl(dslWithEmptyToast(), { mode: 'draft' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const issue = result.issues.find((i) => i.path.includes('message'));
+      expect(issue?.level).toBe('warning');
+      expect(issue?.message).toContain('提示文案');
+    }
+  });
+
+  it('发布模式：同样的缺失升级为 error 并拦住发布', () => {
+    const result = validateFinalDsl(dslWithEmptyToast(), { mode: 'publish' });
+    expect(result.success).toBe(false);
+  });
+
+  it('问题带上位置与节点 id，便于面板定位', () => {
+    const result = validateFinalDsl(dslWithEmptyToast(), { mode: 'publish' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const issue = result.issues.find((i) => i.path.includes('message'));
+      expect(issue?.location).toBe('事件 1 › 动作 1');
+      expect(issue?.nodeId).toBe('btn_1');
+    }
+  });
+
+  it('新建的空 HTTP 数据源不阻断草稿保存', () => {
+    const dsl = baseDsl();
+    dsl.dataSources = [
+      {
+        id: 'ds_new', name: '新数据源', type: 'http', url: '', method: 'GET',
+        headers: {}, params: {}, autoLoad: true, pollInterval: 0, cacheTtl: 0,
+      },
+    ];
+    expect(validateFinalDsl(dsl, { mode: 'draft' }).success).toBe(true);
+    expect(validateFinalDsl(dsl, { mode: 'publish' }).success).toBe(false);
+  });
+
+  it('填了但指向不存在的引用，两种模式都是 error', () => {
+    const dsl = baseDsl();
+    dsl.events = [
+      {
+        id: 'e1', nodeId: 'btn_1', trigger: 'onClick',
+        actions: [{ type: 'modal.open', modalId: 'ghost_modal' }],
+      },
+    ];
+    expect(validateFinalDsl(dsl, { mode: 'draft' }).success).toBe(false);
+    expect(validateFinalDsl(dsl, { mode: 'publish' }).success).toBe(false);
+  });
+
+  it('循环容器没填数据来源，草稿放行、发布拦截', () => {
+    const dsl = baseDsl();
+    dsl.craftJson.btn_1!.control = {
+      loop: { source: '', itemAlias: 'item', indexAlias: 'index' },
+    };
+    expect(validateFinalDsl(dsl, { mode: 'draft' }).success).toBe(true);
+    expect(validateFinalDsl(dsl, { mode: 'publish' }).success).toBe(false);
+  });
+
+  it('默认按发布口径，不传 mode 时最严格', () => {
+    expect(validateFinalDsl(dslWithEmptyToast()).success).toBe(false);
+  });
+});
+
 describe('migrateDsl', () => {
   it('当前版本原样通过', () => {
     const result = migrateDsl(baseDsl());

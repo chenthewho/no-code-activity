@@ -46,7 +46,8 @@ export class PublishService {
       if (!draft) throw new BadRequestException('活动尚无内容，请先在设计器中编辑');
 
       const knownMaterials = await this.loadEnabledMaterials();
-      const result = validateFinalDsl(draft.dsl, { knownMaterials });
+      // publish 模式：草稿期只提示的「还没填」在这里升级为错误，拦住不完整的配置
+      const result = validateFinalDsl(draft.dsl, { knownMaterials, mode: 'publish' });
       if (!result.success) {
         throw new BadRequestException({ message: '发布校验失败', errors: result.issues });
       }

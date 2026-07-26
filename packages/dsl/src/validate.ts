@@ -1,20 +1,32 @@
 import { ROOT_NODE_ID } from '@nca/shared';
 import { finalDslSchema, type FinalDsl } from './schema/dsl';
 import type { CraftJson } from './schema/node';
+import { ACTION_FIELD_LABELS, REQUIRED_ACTION_FIELDS } from './schema/action';
 
 export interface DslIssue {
   level: 'error' | 'warning';
   path: string;
   message: string;
+  /** 面板上的位置描述，如「事件 2 › 动作 3「轻提示」」，用于把问题指回具体表单 */
+  location?: string;
+  /** 关联的节点 id，设计器据此跳转选中 */
+  nodeId?: string;
 }
 
 export type ValidateResult =
   | { success: true; data: FinalDsl; issues: DslIssue[] }
   | { success: false; issues: DslIssue[] };
 
+/**
+ * draft   —— 编辑中。允许「还没填」，缺字段只报 warning，保证草稿随时存得下。
+ * publish —— 上线前。同样的缺失升级为 error，把不完整的配置拦在发布环节。
+ */
+export type ValidateMode = 'draft' | 'publish';
+
 export interface ValidateOptions {
   /** 已注册物料名集合；传入则校验 resolvedName 能否解析 */
   knownMaterials?: ReadonlySet<string> | readonly string[];
+  mode?: ValidateMode;
 }
 
 /**
@@ -24,6 +36,9 @@ export interface ValidateOptions {
  */
 function checkIntegrity(dsl: FinalDsl, options: ValidateOptions): DslIssue[] {
   const issues: DslIssue[] = [];
+  const mode: ValidateMode = options.mode ?? 'publish';
+  // 编辑中「还没填完」是常态，不该阻断保存；发布时同样的缺失必须拦住
+  const missingLevel: DslIssue['level'] = mode === 'draft' ? 'warning' : 'error';
   const tree: CraftJson = dsl.craftJson;
   const nodeIds = new Set(Object.keys(tree));
   const known = options.knownMaterials
@@ -98,45 +113,71 @@ function checkIntegrity(dsl: FinalDsl, options: ValidateOptions): DslIssue[] {
       issues.push({
         level: 'error',
         path: `events[${i}].nodeId`,
-        message: `事件绑定指向不存在的节点 ${binding.nodeId}`,
+        message: `事件绑定指向的组件已不存在`,
+        location: `事件 ${i + 1}`,
       });
     }
     for (const [j, action] of binding.actions.entries()) {
       const at = `events[${i}].actions[${j}]`;
+      const where = `事件 ${i + 1} › 动作 ${j + 1}`;
+      const record = action as unknown as Record<string, unknown>;
+
+      // 必填项缺失：清单来自协议包，与设计器表单的必填标记同源
+      for (const field of REQUIRED_ACTION_FIELDS[action.type] ?? []) {
+        const value = record[field];
+        if (value === undefined || value === null || value === '') {
+          issues.push({
+            level: missingLevel,
+            path: `${at}.${field}`,
+            message: `「${ACTION_FIELD_LABELS[field] ?? field}」还没填`,
+            location: where,
+            nodeId: binding.nodeId,
+          });
+        }
+      }
+
       switch (action.type) {
         case 'dataSource.refresh':
-          if (!dataSourceIds.has(action.dataSourceId)) {
+          if (action.dataSourceId && !dataSourceIds.has(action.dataSourceId)) {
             issues.push({
               level: 'error',
               path: `${at}.dataSourceId`,
-              message: `数据源 ${action.dataSourceId} 不存在`,
+              message: `指向的数据源已不存在`,
+              location: where,
+              nodeId: binding.nodeId,
             });
           }
           break;
         case 'modal.open':
-          if (!nodeIds.has(action.modalId)) {
+          if (action.modalId && !nodeIds.has(action.modalId)) {
             issues.push({
               level: 'error',
               path: `${at}.modalId`,
-              message: `弹窗节点 ${action.modalId} 不存在`,
+              message: `指向的弹窗已不存在`,
+              location: where,
+              nodeId: binding.nodeId,
             });
           }
           break;
         case 'component.trigger':
-          if (!nodeIds.has(action.nodeId)) {
+          if (action.nodeId && !nodeIds.has(action.nodeId)) {
             issues.push({
               level: 'error',
               path: `${at}.nodeId`,
-              message: `目标组件 ${action.nodeId} 不存在`,
+              message: `指向的组件已不存在`,
+              location: where,
+              nodeId: binding.nodeId,
             });
           }
           break;
         case 'form.submit':
-          if (!nodeIds.has(action.formNodeId)) {
+          if (action.formNodeId && !nodeIds.has(action.formNodeId)) {
             issues.push({
               level: 'error',
               path: `${at}.formNodeId`,
-              message: `表单节点 ${action.formNodeId} 不存在`,
+              message: `指向的表单节点已不存在`,
+              location: where,
+              nodeId: binding.nodeId,
             });
           }
           break;
@@ -152,6 +193,37 @@ function checkIntegrity(dsl: FinalDsl, options: ValidateOptions): DslIssue[] {
       issues.push({ level: 'error', path: `dataSources[${i}].id`, message: `数据源 id 重复：${ds.id}` });
     }
     seenDs.add(ds.id);
+
+    const dsWhere = `数据源「${ds.name}」`;
+    if (ds.type === 'http' && !ds.url) {
+      issues.push({
+        level: missingLevel,
+        path: `dataSources[${i}].url`,
+        message: '「接口地址」还没填',
+        location: dsWhere,
+      });
+    }
+    if (ds.type === 'computed' && !ds.expression) {
+      issues.push({
+        level: missingLevel,
+        path: `dataSources[${i}].expression`,
+        message: '「计算表达式」还没填',
+        location: dsWhere,
+      });
+    }
+  }
+
+  for (const [id, node] of Object.entries(tree)) {
+    const loop = node.control?.loop;
+    if (loop && !loop.source) {
+      issues.push({
+        level: missingLevel,
+        path: `craftJson.${id}.control.loop.source`,
+        message: '列表渲染的「数据来源」还没填',
+        location: `组件 ${node.displayName ?? node.type.resolvedName}`,
+        nodeId: id,
+      });
+    }
   }
 
   if (dsl.meta.startTime && dsl.meta.endTime) {

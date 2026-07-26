@@ -24,7 +24,13 @@ export async function loadDsl(url: string, signal?: AbortSignal): Promise<LoadRe
 
 export function parseDsl(raw: unknown): LoadResult {
   const migrated = migrateDsl(raw);
-  const result = validateFinalDsl(migrated.dsl, { knownMaterials: knownMaterialNames });
+  // 用 draft 口径：渲染器的职责是「尽量把页面渲染出来」，不是把关。
+  // 「某个动作还没填完」不该让设计器画布变空白，更不该让线上活动页白屏——
+  // 完整性由发布环节负责拦截，这里只拒绝结构性损坏。
+  const result = validateFinalDsl(migrated.dsl, {
+    knownMaterials: knownMaterialNames,
+    mode: 'draft',
+  });
 
   if (!result.success) {
     const detail = result.issues

@@ -1,4 +1,4 @@
-import type { DslAction, DslActionType, JsonValue } from '@nca/dsl';
+import { REQUIRED_ACTION_FIELDS, type DslAction, type DslActionType, type JsonValue } from '@nca/dsl';
 
 /**
  * 动作配置表单的声明式定义。
@@ -188,6 +188,23 @@ export const ACTION_DEF_MAP: Record<string, ActionDef> = Object.fromEntries(
 export function createAction(type: DslActionType): DslAction {
   const def = ACTION_DEF_MAP[type];
   return { type, ...(def?.defaults ?? {}) } as DslAction;
+}
+
+/**
+ * 该字段是否必填。清单来自 @nca/dsl，与后端发布校验读同一份，
+ * 不会出现「界面没标必填、发布时却被拦下」的错位。
+ */
+export function isRequiredField(type: DslActionType, key: string): boolean {
+  return (REQUIRED_ACTION_FIELDS[type] ?? []).includes(key);
+}
+
+/** 返回该动作所有还没填的必填字段 */
+export function missingFields(action: DslAction): string[] {
+  const record = action as unknown as Record<string, unknown>;
+  return (REQUIRED_ACTION_FIELDS[action.type] ?? []).filter((key) => {
+    const value = record[key];
+    return value === undefined || value === null || value === '';
+  });
 }
 
 export function describeAction(action: DslAction): string {

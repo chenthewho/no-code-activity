@@ -25,7 +25,7 @@ export class DraftService {
       return createEmptyDsl(activity.id, activity.title);
     }
 
-    const result = validateFinalDsl(draft.dsl);
+    const result = validateFinalDsl(draft.dsl, { mode: 'draft' });
     if (!result.success) {
       throw new BadRequestException({
         message: '草稿内容已损坏，无法解析',
@@ -44,9 +44,11 @@ export class DraftService {
     const exists = await this.prisma.activity.count({ where: { id: activityId, deletedAt: null } });
     if (exists === 0) throw new NotFoundException('活动不存在');
 
-    const result = validateFinalDsl(dsl);
+    // draft 模式：结构必须合法，但允许「还没填完」——
+    // 运营边配边存是常态，卡在这里会让编辑流程直接断掉
+    const result = validateFinalDsl(dsl, { mode: 'draft' });
     if (!result.success) {
-      throw new BadRequestException({ message: 'DSL 校验失败', errors: result.issues });
+      throw new BadRequestException({ message: '草稿结构不合法', errors: result.issues });
     }
 
     const saved = await this.prisma.dslDraft.upsert({

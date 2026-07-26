@@ -14,8 +14,9 @@ const baseFields = {
  */
 export const httpDataSourceSchema = z.object({
   ...baseFields,
+  // 与动作字段同理：新建数据源时 url 必然为空，草稿要能存下
   type: z.literal('http'),
-  url: httpUrl,
+  url: httpUrl.or(z.literal('')),
   method: z.enum(['GET', 'POST']).default('GET'),
   headers: z.record(z.string(), z.string()).default({}),
   /** 值可含 {{ }} 表达式，请求前由 propsParser 求值 */
@@ -41,7 +42,7 @@ export const staticDataSourceSchema = z.object({
 export const computedDataSourceSchema = z.object({
   ...baseFields,
   type: z.literal('computed'),
-  expression: z.string().min(1),
+  expression: z.string(),
 });
 
 export const dataSourceSchema = z.discriminatedUnion('type', [
