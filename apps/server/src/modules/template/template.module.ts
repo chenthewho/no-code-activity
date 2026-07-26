@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Injectable,
   Module,
@@ -27,6 +28,8 @@ const listSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   category: z.string().optional(),
   keyword: z.string().optional(),
+  /** 只看我收藏的 */
+  onlyFavorite: z.coerce.boolean().optional(),
 });
 type ListDto = z.infer<typeof listSchema>;
 
@@ -34,7 +37,7 @@ const createSchema = z.object({
   title: z.string().min(1).max(120),
   cover: z.string().optional(),
   description: z.string().max(500).optional(),
-  category: z.string().optional(),
+  category: z.string().max(40).optional(),
   /** 从某个活动的草稿另存为模板 */
   activityId: z.string().min(1),
 });
@@ -47,6 +50,8 @@ interface TemplateSummary {
   description?: string;
   category?: string;
   useCount: number;
+  favCount: number;
+  favorited: boolean;
   createdAt: string;
 }
 
@@ -54,21 +59,26 @@ interface TemplateSummary {
 class TemplateService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: ListDto): Promise<PageResult<TemplateSummary>> {
+  async list(query: ListDto, userId: string): Promise<PageResult<TemplateSummary>> {
     const where: Prisma.TemplateWhereInput = {
       enabled: true,
       ...(query.category ? { category: query.category } : {}),
       ...(query.keyword ? { title: { contains: query.keyword } } : {}),
+      ...(query.onlyFavorite ? { favorites: { some: { userId } } } : {}),
     };
+
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.template.findMany({
         where,
-        orderBy: { useCount: 'desc' },
+        orderBy: [{ useCount: 'desc' }, { createdAt: 'desc' }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
+        // 只取当前用户那条收藏记录，用来判断本人是否已收藏
+        include: { favorites: { where: { userId }, select: { userId: true } } },
       }),
       this.prisma.template.count({ where }),
     ]);
+
     return {
       list: rows.map((row) => ({
         id: row.id,
@@ -77,12 +87,24 @@ class TemplateService {
         description: row.description ?? undefined,
         category: row.category ?? undefined,
         useCount: row.useCount,
+        favCount: row.favCount,
+        favorited: row.favorites.length > 0,
         createdAt: row.createdAt.toISOString(),
       })),
       total,
       page: query.page,
       pageSize: query.pageSize,
     };
+  }
+
+  /** 已有模板用过的分类，供筛选下拉直接列出，不必另建字典表 */
+  async categories(): Promise<string[]> {
+    const rows = await this.prisma.template.findMany({
+      where: { enabled: true, category: { not: null } },
+      distinct: ['category'],
+      select: { category: true },
+    });
+    return rows.map((r) => r.category).filter((c): c is string => Boolean(c));
   }
 
   async detail(id: string) {
@@ -121,6 +143,45 @@ class TemplateService {
       },
     });
   }
+
+  /**
+   * 收藏开关。favCount 与收藏记录必须在同一事务里增减，
+   * 否则并发下计数会和实际收藏数对不上。
+   */
+  async toggleFavorite(templateId: string, userId: string): Promise<{ favorited: boolean }> {
+    await this.detail(templateId);
+    const existing = await this.prisma.templateFavorite.findUnique({
+      where: { userId_templateId: { userId, templateId } },
+    });
+
+    if (existing) {
+      await this.prisma.$transaction([
+        this.prisma.templateFavorite.delete({
+          where: { userId_templateId: { userId, templateId } },
+        }),
+        this.prisma.template.update({
+          where: { id: templateId },
+          data: { favCount: { decrement: 1 } },
+        }),
+      ]);
+      return { favorited: false };
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.templateFavorite.create({ data: { userId, templateId } }),
+      this.prisma.template.update({
+        where: { id: templateId },
+        data: { favCount: { increment: 1 } },
+      }),
+    ]);
+    return { favorited: true };
+  }
+
+  /** 下架而非物理删除：已用该模板创建的活动仍需追溯来源 */
+  async disable(id: string) {
+    await this.detail(id);
+    await this.prisma.template.update({ where: { id }, data: { enabled: false } });
+  }
 }
 
 @ApiTags('template')
@@ -132,8 +193,18 @@ class TemplateController {
   @Get()
   @ApiOperation({ summary: '模板列表' })
   @RequirePermissions(PERMISSION.TEMPLATE_VIEW)
-  list(@Query(new ZodValidationPipe(listSchema)) query: ListDto) {
-    return this.service.list(query);
+  list(
+    @Query(new ZodValidationPipe(listSchema)) query: ListDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.list(query, user.sub);
+  }
+
+  @Get('categories')
+  @ApiOperation({ summary: '模板分类列表' })
+  @RequirePermissions(PERMISSION.TEMPLATE_VIEW)
+  categories() {
+    return this.service.categories();
   }
 
   @Get(':id')
@@ -151,6 +222,20 @@ class TemplateController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.service.createFromActivity(dto, user.sub);
+  }
+
+  @Post(':id/favorite')
+  @ApiOperation({ summary: '收藏 / 取消收藏' })
+  @RequirePermissions(PERMISSION.TEMPLATE_VIEW)
+  favorite(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.service.toggleFavorite(id, user.sub);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: '下架模板' })
+  @RequirePermissions(PERMISSION.TEMPLATE_MANAGE)
+  disable(@Param('id') id: string) {
+    return this.service.disable(id);
   }
 }
 

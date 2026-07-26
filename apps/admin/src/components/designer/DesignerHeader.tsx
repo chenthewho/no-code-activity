@@ -7,6 +7,7 @@ import {
   EyeOutlined,
   ImportOutlined,
   LoginOutlined,
+  SnippetsOutlined,
   MobileOutlined,
   NodeIndexOutlined,
   RedoOutlined,
@@ -35,6 +36,7 @@ interface Props {
   onPublish: () => void;
   onPreview: () => void;
   onOpenEvents: () => void;
+  onSaveAsTemplate: () => void;
 }
 
 /**
@@ -57,6 +59,7 @@ export function DesignerHeader({
   onPublish,
   onPreview,
   onOpenEvents,
+  onSaveAsTemplate,
 }: Props) {
   const { selectedId, removeNode, undo, redo, past, future, load } = useDesignerStore();
 
@@ -168,6 +171,12 @@ export function DesignerHeader({
         <Button type="text" size="small" icon={<EyeOutlined />} onClick={onPreview}>
           预览
         </Button>
+
+        <Tooltip title="以当前草稿为蓝本创建模板">
+          <Button type="text" size="small" icon={<SnippetsOutlined />} onClick={onSaveAsTemplate}>
+            存为模板
+          </Button>
+        </Tooltip>
       </Space>
 
       {/* 交付 */}

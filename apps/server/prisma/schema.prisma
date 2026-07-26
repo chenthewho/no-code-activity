@@ -158,8 +158,22 @@ model Template {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  favorites TemplateFavorite[]
+
   @@index([category, enabled])
   @@map("template")
+}
+
+/// 收藏是「谁收藏了哪个模板」，光靠 template.favCount 判断不出当前用户收没收藏
+model TemplateFavorite {
+  userId     String
+  templateId String
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@id([userId, templateId])
+  @@index([userId])
+  @@map("template_favorite")
 }
 
 /// 物料注册表。代码里的 materials 包是实现，这里存可用性与灰度开关

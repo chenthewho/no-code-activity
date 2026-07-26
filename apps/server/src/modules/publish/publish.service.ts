@@ -11,6 +11,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { StorageService } from '../storage/storage.service';
+import { stampMetaFromActivity } from '../dsl/draft.service';
 
 export interface PublishResult {
   version: number;
@@ -52,7 +53,8 @@ export class PublishService {
         throw new BadRequestException({ message: '发布校验失败', errors: result.issues });
       }
 
-      const dsl = this.stampMeta(result.data, activity.title);
+      // 发布产物同样以基础信息为准，避免线上页读到过期的标题或活动时间
+      const dsl = this.stampMeta(result.data, activity);
       if (Object.keys(dsl.craftJson).length <= 1 && dsl.craftJson.ROOT?.nodes.length === 0) {
         throw new BadRequestException('页面还是空的，至少放置一个组件再发布');
       }
@@ -185,11 +187,13 @@ export class PublishService {
     return new Set(rows.map((r) => r.name));
   }
 
-  private stampMeta(dsl: FinalDsl, title: string): FinalDsl {
+  private stampMeta(
+    dsl: FinalDsl,
+    activity: { id: string; title: string; cover: string | null; startTime: Date | null; endTime: Date | null },
+  ): FinalDsl {
     return {
-      ...dsl,
+      ...stampMetaFromActivity(dsl, activity),
       schemaVersion: DSL_SCHEMA_VERSION,
-      meta: { ...dsl.meta, title },
     };
   }
 

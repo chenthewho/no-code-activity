@@ -1,12 +1,24 @@
 import { ACTIVITY_STATUS } from '@nca/shared';
 import { z } from 'zod';
 
+/**
+ * 只校验「是字符串」不够：无效日期会一路漏到 new Date() 才变成 Invalid Date，
+ * 最终以一个看不懂的数据库错误冒出来。在入口就拦住并指明字段。
+ */
+const isoDateTime = z
+  .string()
+  .refine((v) => !Number.isNaN(Date.parse(v)), { message: '需为合法的时间' });
+
 export const createActivitySchema = z.object({
   title: z.string().min(1, '请输入活动名称').max(120),
   description: z.string().max(500).optional(),
-  cover: z.string().optional(),
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
+  // 空串归一成未设置：清空封面时前端会传 ""，落库后会被当成一个非法的资源地址
+  cover: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
+  startTime: isoDateTime.optional(),
+  endTime: isoDateTime.optional(),
   /** 从模板创建时传入 */
   templateId: z.string().optional(),
 });

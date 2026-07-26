@@ -97,12 +97,43 @@ export const assetApi = {
   },
 };
 
+export interface TemplateSummary {
+  id: string;
+  title: string;
+  cover?: string;
+  description?: string;
+  category?: string;
+  useCount: number;
+  favCount: number;
+  favorited: boolean;
+  createdAt: string;
+}
+
+export interface TemplateDetail extends TemplateSummary {
+  dsl: FinalDsl;
+}
+
 export const templateApi = {
-  list: (query: { page?: number; pageSize?: number; keyword?: string } = {}) =>
-    request<PageResult<{ id: string; title: string; cover?: string; useCount: number }>>(
-      '/templates',
-      { query: query as Record<string, string> },
-    ),
-  saveFrom: (body: { title: string; activityId: string; description?: string }) =>
-    request<{ id: string }>('/templates', { method: 'POST', body }),
+  list: (query: {
+    page?: number;
+    pageSize?: number;
+    keyword?: string;
+    category?: string;
+    onlyFavorite?: boolean;
+  } = {}) =>
+    request<PageResult<TemplateSummary>>('/templates', {
+      query: query as Record<string, string>,
+    }),
+  categories: () => request<string[]>('/templates/categories'),
+  detail: (id: string) => request<TemplateDetail>(`/templates/${id}`),
+  saveFrom: (body: {
+    title: string;
+    activityId: string;
+    description?: string;
+    category?: string;
+    cover?: string;
+  }) => request<{ id: string }>('/templates', { method: 'POST', body }),
+  toggleFavorite: (id: string) =>
+    request<{ favorited: boolean }>(`/templates/${id}/favorite`, { method: 'POST' }),
+  disable: (id: string) => request<void>(`/templates/${id}`, { method: 'DELETE' }),
 };

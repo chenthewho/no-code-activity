@@ -8,6 +8,37 @@ export interface DraftSaveResult {
   issues: DslIssue[];
 }
 
+interface ActivityBasics {
+  id: string;
+  title: string;
+  cover: string | null;
+  startTime: Date | null;
+  endTime: Date | null;
+}
+
+/**
+ * 把活动基础信息盖进 DSL meta。
+ *
+ * 标题、活动时间、封面只在「活动基础信息」表单里维护，设计器改不了它们；
+ * 若不在这里同步，运营改完时间后画布里绑定 {{ meta.endTime }} 的倒计时
+ * 依然读的是旧值——两份数据各说各话。基础信息是唯一真相，meta 是它的投影。
+ */
+export function stampMetaFromActivity(dsl: FinalDsl, activity: ActivityBasics): FinalDsl {
+  return {
+    ...dsl,
+    meta: {
+      ...dsl.meta,
+      activityId: activity.id,
+      title: activity.title,
+      // 用 || 而非 ??：空串表示「没设封面」，而 ?? 只挡 null，
+      // 空串会被盖进 meta 并让 assetUrl 校验失败，进而整个画布空白
+      cover: activity.cover || dsl.meta.cover || undefined,
+      startTime: activity.startTime?.toISOString(),
+      endTime: activity.endTime?.toISOString(),
+    },
+  };
+}
+
 @Injectable()
 export class DraftService {
   constructor(private readonly prisma: PrismaService) {}
@@ -15,14 +46,14 @@ export class DraftService {
   async get(activityId: string): Promise<FinalDsl> {
     const activity = await this.prisma.activity.findFirst({
       where: { id: activityId, deletedAt: null },
-      select: { id: true, title: true },
+      select: { id: true, title: true, cover: true, startTime: true, endTime: true },
     });
     if (!activity) throw new NotFoundException('活动不存在');
 
     const draft = await this.prisma.dslDraft.findUnique({ where: { activityId } });
     if (!draft) {
       // 历史数据兜底：草稿丢失时返回空白 DSL，让设计器至少能打开
-      return createEmptyDsl(activity.id, activity.title);
+      return stampMetaFromActivity(createEmptyDsl(activity.id, activity.title), activity);
     }
 
     const result = validateFinalDsl(draft.dsl, { mode: 'draft' });
@@ -32,7 +63,7 @@ export class DraftService {
         errors: result.issues,
       });
     }
-    return result.data;
+    return stampMetaFromActivity(result.data, activity);
   }
 
   /**

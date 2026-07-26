@@ -6,7 +6,8 @@ import { assetApi } from '../../api';
 interface Props {
   value?: string;
   placeholder?: string;
-  onChange: (url: string) => void;
+  /** 可选：放进 antd Form.Item 时由表单注入 value/onChange */
+  onChange?: (url: string) => void;
 }
 
 /**
@@ -22,7 +23,7 @@ export function ImagePicker({ value, placeholder, onChange }: Props) {
         <Input
           value={value}
           placeholder={placeholder ?? '图片地址，支持 {{ }} 绑定'}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onChange?.(e.target.value)}
         />
         <Button onClick={() => setOpen(true)}>选择</Button>
       </Space.Compact>
@@ -53,7 +54,7 @@ export function ImagePicker({ value, placeholder, onChange }: Props) {
               children: (
                 <UploadTab
                   onPicked={(url) => {
-                    onChange(url);
+                    onChange?.(url);
                     setOpen(false);
                   }}
                 />
@@ -65,7 +66,7 @@ export function ImagePicker({ value, placeholder, onChange }: Props) {
               children: (
                 <LibraryTab
                   onPicked={(url) => {
-                    onChange(url);
+                    onChange?.(url);
                     setOpen(false);
                   }}
                 />

@@ -13,6 +13,7 @@ import { NodeTree } from '../components/designer/NodeTree';
 import { DataSourcePanel } from '../components/designer/DataSourcePanel';
 import { formatIssues } from '../components/designer/IssuePanel';
 import { DesignerHeader, type DeviceMode } from '../components/designer/DesignerHeader';
+import { SaveAsTemplateModal } from '../components/designer/SaveAsTemplateModal';
 
 const AUTOSAVE_DELAY = 1500;
 
@@ -33,6 +34,7 @@ export function DesignerPage() {
   const [changelog, setChangelog] = useState('');
   const [device, setDevice] = useState<DeviceMode>('mobile');
   const [leftTab, setLeftTab] = useState('materials');
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [rightTabKey, setRightTabKey] = useState(0);
 
   const { data: metas = [], isLoading: metaLoading } = useQuery({
@@ -212,6 +214,10 @@ export function DesignerPage() {
         onPublish={handlePublish}
         onPreview={() => window.open(`${RENDERER_ORIGIN}/?id=${activityId}`, '_blank')}
         onOpenEvents={() => setLeftTab('data')}
+        onSaveAsTemplate={() => {
+          // 模板取的是服务端草稿，先把当前编辑落库，否则存进去的是上一次自动保存的内容
+          saveMutation.mutate(undefined, { onSuccess: () => setSavingTemplate(true) });
+        }}
       />
 
       <Layout>
@@ -276,6 +282,13 @@ export function DesignerPage() {
           <SettingPanel key={rightTabKey} metas={metas} />
         </Layout.Sider>
       </Layout>
+
+      <SaveAsTemplateModal
+        open={savingTemplate}
+        activityId={activityId}
+        defaultTitle={dsl.meta.title}
+        onClose={() => setSavingTemplate(false)}
+      />
 
       <Modal
         title="发布活动"
