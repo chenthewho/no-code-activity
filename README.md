@@ -51,7 +51,7 @@ pnpm dev                     # 或分别启动三个服务
 
 ```bash
 pnpm build          # 全量构建
-pnpm test           # 全量测试（55 项）
+pnpm test           # 全量测试（78 项）
 pnpm typecheck
 pnpm lint
 ```
