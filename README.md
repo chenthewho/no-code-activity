@@ -56,19 +56,22 @@ pnpm typecheck
 pnpm lint
 ```
 
-## 已完成
+## 已完成（M0 / M1 / M2）
 
-- **M0 基建**：monorepo、CI 配置、TypeScript strict、ESLint 9 flat config
-- **DSL 协议**：FinalDSL / 物料协议 / 动作协议 / manifest，含引用完整性校验与版本迁移链
+- **DSL 协议**：FinalDSL / 物料协议 / 动作协议 / manifest；校验分两级——
+  草稿容忍「还没填完」，发布严格拦截；含引用完整性检查与版本迁移链
 - **物料库**：Page、Container、Text、Image、Button、Modal、Countdown、Swiper、RankList
-- **后端**：RBAC、活动 CRUD、草稿自动保存、发布与回滚、模板、物料注册表、C 端 runtime 接口
-- **渲染器**：递归渲染、condition/loop 容器、受限表达式求值、事件动作、数据源引擎、宿主适配层
-- **设计器**：三栏布局、iframe 画布、propsSchema 驱动的设置器、撤销重做、自动保存、发布
+- **后端**：RBAC、活动 CRUD、草稿自动保存、发布与回滚、模板中心、物料注册表、
+  资源上传、C 端 runtime 接口
+- **渲染器**：递归渲染、condition/loop 容器、受限表达式求值（不用 eval）、
+  事件动作编排、数据源引擎、宿主适配层、rem 移动端适配
+- **设计器**：iframe 画布（点选/描边/拖拽落点）、propsSchema 驱动的设置器、
+  事件编排、数据源配置、撤销重做、自动保存、存为模板、发布
 
-## 下一步（M2）
+## 下一步（M3）
 
-事件编排面板、数据源配置面板、模板中心完善、拖拽排序、资源上传（COS 直传）。
-详见 [开发规划](docs/development-plan.md)。
+奖品配置与抽奖（Redis 原子扣减）、表单提交、活动预约、渠道链接、SSO 对接、
+埋点上报、COS STS 直传。详见 [开发规划](docs/development-plan.md)。
 
 ## 文档
 
