@@ -66,6 +66,37 @@ export const materialApi = {
   list: () => request<MaterialMeta[]>('/materials'),
 };
 
+export interface AssetItem {
+  id: string;
+  url: string;
+  type: string;
+  size: number;
+  createdAt: string;
+}
+
+export const assetApi = {
+  list: (query: { page?: number; pageSize?: number; type?: string } = {}) =>
+    request<PageResult<AssetItem>>('/assets', { query: query as Record<string, string> }),
+
+  /** 走 FormData，不能用 request()——它固定发 JSON */
+  upload: async (file: File, activityId?: string): Promise<{ url: string; reused: boolean }> => {
+    const form = new FormData();
+    form.append('file', file);
+    if (activityId) form.append('activityId', activityId);
+
+    const token = localStorage.getItem('nca:token');
+    const base = import.meta.env.VITE_API_BASE ?? 'http://localhost:3100/api/v1';
+    const response = await fetch(`${base}/assets/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const payload = (await response.json()) as { code: number; message: string; data: { url: string; reused: boolean } };
+    if (!response.ok) throw new Error(payload.message ?? '上传失败');
+    return payload.data;
+  },
+};
+
 export const templateApi = {
   list: (query: { page?: number; pageSize?: number; keyword?: string } = {}) =>
     request<PageResult<{ id: string; title: string; cover?: string; useCount: number }>>(

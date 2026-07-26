@@ -3,6 +3,7 @@ import type { JsonValue, MaterialMeta, PropSchemaItem } from '@nca/dsl';
 import { useDesignerStore } from '../../stores/designer';
 import { EventPanel } from './EventPanel';
 import { ControlPanel } from './ControlPanel';
+import { ImagePicker } from './ImagePicker';
 
 interface SettingPanelProps {
   metas: MaterialMeta[];
@@ -172,6 +173,14 @@ function PropEditor({ item, value, onChange }: PropEditorProps) {
       );
 
     case 'image':
+      return (
+        <ImagePicker
+          value={value as string}
+          placeholder={item.placeholder ?? bindableHint}
+          onChange={onChange}
+        />
+      );
+
     case 'video':
     case 'url':
     case 'dataSource':

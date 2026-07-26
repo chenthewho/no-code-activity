@@ -6,6 +6,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { ActivityModule } from './modules/activity/activity.module';
+import { AssetModule } from './modules/asset/asset.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { MaterialModule } from './modules/material/material.module';
 import { RuntimeModule } from './modules/runtime/runtime.module';
@@ -22,6 +23,7 @@ import { TemplateModule } from './modules/template/template.module';
     RedisModule,
     AuthModule,
     ActivityModule,
+    AssetModule,
     TemplateModule,
     MaterialModule,
     RuntimeModule,
