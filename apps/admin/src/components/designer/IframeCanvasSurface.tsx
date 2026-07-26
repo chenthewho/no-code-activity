@@ -13,6 +13,7 @@ const MESSAGE = {
   DROP_PROBE: 'EDITOR_DROP_PROBE',
   DROP_END: 'EDITOR_DROP_END',
   DROP_TARGET: 'EDITOR_DROP_TARGET',
+  REMOVE: 'EDITOR_REMOVE_NODE',
 } as const;
 
 export interface DropTargetInfo {
@@ -24,6 +25,7 @@ interface Props {
   dsl: FinalDsl;
   onSelectNode?: (nodeId: string) => void;
   designWidth?: number;
+  canvasHeight?: number;
 }
 
 /**
@@ -37,7 +39,12 @@ interface Props {
  * allow-scripts 而不带 allow-same-origin 会把 iframe 变成不透明源，
  * 反而让指定 targetOrigin 的 postMessage 失效。真正的管控是下面的 targetOrigin。
  */
-export function IframeCanvasSurface({ dsl, onSelectNode, designWidth = 375 }: Props) {
+export function IframeCanvasSurface({
+  dsl,
+  onSelectNode,
+  designWidth = 375,
+  canvasHeight = 667,
+}: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
   const seqRef = useRef(0);
@@ -58,6 +65,9 @@ export function IframeCanvasSurface({ dsl, onSelectNode, designWidth = 375 }: Pr
         setReady(true);
       } else if (type === MESSAGE.SELECT && typeof payload?.nodeId === 'string') {
         onSelectNode?.(payload.nodeId);
+      } else if (type === MESSAGE.REMOVE) {
+        const nodeId = payload?.nodeId;
+        if (typeof nodeId === 'string') useDesignerStore.getState().removeNode(nodeId);
       } else if (type === MESSAGE.DROP_TARGET) {
         setDropTarget({
           parentId: String(payload?.parentId ?? 'ROOT'),
@@ -129,7 +139,7 @@ export function IframeCanvasSurface({ dsl, onSelectNode, designWidth = 375 }: Pr
         style={{
           position: 'relative',
           width: designWidth,
-          minHeight: 667,
+          minHeight: canvasHeight,
           background: '#fff',
           boxShadow: '0 2px 12px rgba(0,0,0,.12)',
         }}
@@ -146,7 +156,7 @@ export function IframeCanvasSurface({ dsl, onSelectNode, designWidth = 375 }: Pr
           style={{
             display: 'block',
             width: '100%',
-            height: 667,
+            height: canvasHeight,
             border: 'none',
             pointerEvents: dragging ? 'none' : 'auto',
           }}

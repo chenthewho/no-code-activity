@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.3.2",
     "@nca/dsl": "workspace:*",
     "@nca/materials": "workspace:*",
     "@nca/shared": "workspace:*",

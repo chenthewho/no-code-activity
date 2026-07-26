@@ -17,8 +17,7 @@ export function NodeTree() {
       // 没有新键就返回原引用，否则每轮渲染都换新数组会触发多余重渲染
       return merged.length === prev.length ? prev : merged;
     });
-    // allKeys 每次渲染都是新数组，用长度做依赖
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // allKeys 每次渲染都是新数组，故用长度做依赖
   }, [allKeys.length]);
 
   const build = (nodeId: string): DataNode | null => {

@@ -1,9 +1,25 @@
-import { Empty, Form, Input, InputNumber, Radio, Select, Switch, Tabs, ColorPicker } from 'antd';
+import {
+  Alert,
+  Collapse,
+  ColorPicker,
+  Empty,
+  Form,
+  Input,
+  InputNumber,
+  Radio,
+  Select,
+  Space,
+  Switch,
+  Tabs,
+  Tag,
+} from 'antd';
+import { SettingOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import type { JsonValue, MaterialMeta, PropSchemaItem } from '@nca/dsl';
 import { useDesignerStore } from '../../stores/designer';
 import { EventPanel } from './EventPanel';
 import { ControlPanel } from './ControlPanel';
 import { ImagePicker } from './ImagePicker';
+import { SpacingEditor } from './SpacingEditor';
 
 interface SettingPanelProps {
   metas: MaterialMeta[];
@@ -18,30 +34,67 @@ export function SettingPanel({ metas }: SettingPanelProps) {
   const { dsl, selectedId, updateProps } = useDesignerStore();
 
   if (!selectedId) {
-    return <Empty description="在画布中选择一个组件" style={{ marginTop: 60 }} />;
+    return (
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description="在画布中选择一个组件"
+        style={{ marginTop: 80 }}
+      />
+    );
   }
 
   const node = dsl.craftJson[selectedId];
   const meta = metas.find((m) => m.name === node?.type.resolvedName);
   if (!node || !meta) {
-    return <Empty description="该组件未在物料表中注册" style={{ marginTop: 60 }} />;
+    return (
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description="该组件未在物料表中注册"
+        style={{ marginTop: 80 }}
+      />
+    );
   }
 
   const props = node.props as Record<string, unknown>;
-  const groups = {
-    props: meta.propsSchema.filter((p) => p.group === 'props'),
-    style: meta.propsSchema.filter((p) => p.group === 'style'),
-  };
 
-  const renderGroup = (items: PropSchemaItem[]) => {
+  // 协议里的 group / section 决定落在哪一区，面板不做任何字段名猜测
+  const sections = [
+    { key: 'props', title: '基础属性', items: meta.propsSchema.filter((p) => p.group === 'props') },
+    {
+      key: 'style',
+      title: '基础样式',
+      items: meta.propsSchema.filter((p) => p.group === 'style' && p.section !== 'layout'),
+    },
+    {
+      key: 'layout',
+      title: '布局与间距',
+      items: meta.propsSchema.filter((p) => p.group === 'style' && p.section === 'layout'),
+    },
+  ].filter((s) => s.items.length > 0);
+
+  const renderItems = (items: PropSchemaItem[]) => {
     const visible = items.filter((item) => isVisible(item, props));
     if (visible.length === 0) {
-      return <Empty description="无可配置项" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+      return <div style={{ color: '#bfbfbf', fontSize: 12 }}>无可配置项</div>;
     }
     return (
       <Form layout="vertical" size="small">
         {visible.map((item) => (
-          <Form.Item key={item.key} label={item.label} extra={item.help} style={{ marginBottom: 12 }}>
+          <Form.Item
+            key={item.key}
+            label={
+              <Space size={4}>
+                <span>{item.label}</span>
+                {item.bindable && (
+                  <Tag color="blue" style={{ margin: 0, fontSize: 10, lineHeight: '16px' }}>
+                    可绑定
+                  </Tag>
+                )}
+              </Space>
+            }
+            extra={item.help}
+            style={{ marginBottom: 12 }}
+          >
             <PropEditor
               item={item}
               value={props[item.key] ?? item.defaultValue}
@@ -56,11 +109,60 @@ export function SettingPanel({ metas }: SettingPanelProps) {
   return (
     <Tabs
       size="small"
+      centered
       items={[
-        { key: 'props', label: '属性', children: renderGroup(groups.props) },
-        { key: 'style', label: '样式', children: renderGroup(groups.style) },
-        { key: 'event', label: '事件', children: <EventPanel meta={meta} /> },
-        { key: 'control', label: '逻辑', children: <ControlPanel nodeId={selectedId} /> },
+        {
+          key: 'props',
+          label: (
+            <span>
+              <SettingOutlined /> 组件属性
+            </span>
+          ),
+          children: (
+            <div style={{ padding: '0 4px' }}>
+              <Alert
+                type="info"
+                showIcon={false}
+                banner
+                style={{ marginBottom: 8, fontSize: 12, background: '#f6f8fa', border: 'none' }}
+                message={
+                  <Space size={6}>
+                    <span style={{ color: '#8c8c8c' }}>当前选中</span>
+                    <strong>{node.displayName ?? meta.title}</strong>
+                    <code style={{ color: '#bfbfbf', fontSize: 11 }}>{selectedId}</code>
+                  </Space>
+                }
+              />
+              <Collapse
+                ghost
+                size="small"
+                expandIconPosition="end"
+                defaultActiveKey={sections.map((s) => s.key).concat('control')}
+                items={[
+                  ...sections.map((section) => ({
+                    key: section.key,
+                    label: <span style={{ fontSize: 13, fontWeight: 600 }}>{section.title}</span>,
+                    children: renderItems(section.items),
+                  })),
+                  {
+                    key: 'control',
+                    label: <span style={{ fontSize: 13, fontWeight: 600 }}>条件与循环</span>,
+                    children: <ControlPanel nodeId={selectedId} />,
+                  },
+                ]}
+              />
+            </div>
+          ),
+        },
+        {
+          key: 'event',
+          label: (
+            <span>
+              <ThunderboltOutlined /> 事件绑定
+            </span>
+          ),
+          children: <EventPanel meta={meta} />,
+        },
       ]}
     />
   );
@@ -106,16 +208,13 @@ function PropEditor({ item, value, onChange }: PropEditorProps) {
       );
 
     case 'boolean':
-      return <Switch checked={Boolean(value)} onChange={onChange} />;
+      return <Switch size="small" checked={Boolean(value)} onChange={onChange} />;
 
     case 'color':
-      return (
-        <ColorPicker
-          value={(value as string) || undefined}
-          showText
-          onChange={(color) => onChange(color.toHexString())}
-        />
-      );
+      return <ColorEditor value={value as string} onChange={onChange} />;
+
+    case 'spacing':
+      return <SpacingEditor value={value} onChange={onChange} />;
 
     case 'select':
       return (
@@ -135,6 +234,7 @@ function PropEditor({ item, value, onChange }: PropEditorProps) {
           onChange={(e) => onChange(e.target.value)}
           options={item.options?.map((o) => ({ label: o.label, value: o.value }))}
           optionType="button"
+          buttonStyle="solid"
           size="small"
         />
       );
@@ -193,4 +293,25 @@ function PropEditor({ item, value, onChange }: PropEditorProps) {
         />
       );
   }
+}
+
+/**
+ * 颜色编辑器：色块 + 文本框。
+ * 保留文本输入是因为运营常直接粘 rgba() 或 transparent，
+ * 纯取色器给不了这些值。
+ */
+function ColorEditor({ value, onChange }: { value?: string; onChange: (v: string) => void }) {
+  return (
+    <Space.Compact style={{ width: '100%' }}>
+      <ColorPicker
+        value={value && value !== 'transparent' ? value : undefined}
+        onChange={(color) => onChange(color.toHexString())}
+      />
+      <Input
+        value={value ?? ''}
+        placeholder="transparent"
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </Space.Compact>
+  );
 }

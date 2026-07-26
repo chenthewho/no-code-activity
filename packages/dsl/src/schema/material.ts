@@ -36,6 +36,11 @@ export const propSchemaItem = z.object({
   editor: propEditorType,
   /** 面板分组：属性 / 样式 / 事件三栏 */
   group: z.enum(['props', 'style', 'event']).default('props'),
+  /**
+   * 面板内的分区。设置器把样式项再拆成「基础样式」与「布局与间距」两块，
+   * 靠字段名猜属于哪块太脆，索性在协议里说清楚。
+   */
+  section: z.enum(['basic', 'layout']).optional(),
   defaultValue: jsonValue.optional(),
   options: z.array(propOptionSchema).optional(),
   min: z.number().optional(),

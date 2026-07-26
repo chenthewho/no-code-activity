@@ -33,13 +33,18 @@ export function defineMeta(input: MetaInput): MaterialMeta {
   };
 }
 
-/** 宽高/间距/圆角等通用样式项，各物料按需展开，保证设置器体验一致 */
+/** 布局分区的通用项，各物料按需展开，保证设置器体验一致 */
+const layoutProp = (item: Parameters<typeof styleProp>[0]): PropSchemaItem => ({
+  ...styleProp(item),
+  section: 'layout',
+});
+
 export const commonStyleSchema: PropSchemaItem[] = [
-  styleProp({ key: 'width', label: '宽度', editor: 'string', placeholder: '如 100% / 375' }),
-  styleProp({ key: 'height', label: '高度', editor: 'string', placeholder: '如 auto / 200' }),
-  styleProp({ key: 'margin', label: '外边距', editor: 'spacing' }),
-  styleProp({ key: 'padding', label: '内边距', editor: 'spacing' }),
+  layoutProp({ key: 'width', label: '宽度', editor: 'string', placeholder: '如 100% / 375' }),
+  layoutProp({ key: 'height', label: '高度', editor: 'string', placeholder: '如 auto / 200' }),
+  layoutProp({ key: 'margin', label: '外边距', editor: 'spacing' }),
+  layoutProp({ key: 'padding', label: '内边距', editor: 'spacing' }),
   styleProp({ key: 'backgroundColor', label: '背景色', editor: 'color' }),
-  styleProp({ key: 'borderRadius', label: '圆角', editor: 'number', min: 0, max: 999 }),
-  styleProp({ key: 'opacity', label: '透明度', editor: 'number', min: 0, max: 1, step: 0.05 }),
+  layoutProp({ key: 'borderRadius', label: '圆角', editor: 'number', min: 0, max: 999 }),
+  layoutProp({ key: 'opacity', label: '透明度', editor: 'number', min: 0, max: 1, step: 0.05 }),
 ];

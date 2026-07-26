@@ -1,4 +1,5 @@
 import { Layout, Menu, Dropdown, Avatar, Spin } from 'antd';
+import { AppstoreOutlined, LogoutOutlined, ProjectOutlined, ThunderboltFilled } from '@ant-design/icons';
 import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import { PERMISSION } from '@nca/shared';
 import { useAuthStore } from '../stores/auth';
@@ -19,16 +20,18 @@ export function AppLayout() {
   }
 
   // 菜单按权限码过滤，没权限的入口直接不渲染，而不是点进去再报错
-  const items = [
+  const items: { key: string; icon?: React.ReactNode; label: React.ReactNode }[] = [
     can(PERMISSION.ACTIVITY_VIEW) && {
       key: '/activities',
+      icon: <ProjectOutlined />,
       label: <Link to="/activities">活动管理</Link>,
     },
     can(PERMISSION.TEMPLATE_VIEW) && {
       key: '/templates',
+      icon: <AppstoreOutlined />,
       label: <Link to="/templates">模板中心</Link>,
     },
-  ].filter(Boolean) as { key: string; label: React.ReactNode }[];
+  ].filter(Boolean) as { key: string; icon?: React.ReactNode; label: React.ReactNode }[];
 
   const selected = items.find((item) => location.pathname.startsWith(item.key))?.key;
 
@@ -42,7 +45,10 @@ export function AppLayout() {
           paddingInline: 24,
         }}
       >
-        <div style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>活动运营平台</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontSize: 16, fontWeight: 600 }}>
+          <ThunderboltFilled style={{ color: '#1677ff' }} />
+          活动运营平台
+        </div>
         <Dropdown
           menu={{
             items: [
@@ -50,6 +56,7 @@ export function AppLayout() {
               { type: 'divider' as const },
               {
                 key: 'logout',
+                icon: <LogoutOutlined />,
                 label: '退出登录',
                 onClick: () => {
                   logout();
@@ -68,10 +75,15 @@ export function AppLayout() {
         </Dropdown>
       </Header>
       <Layout>
-        <Sider width={200} theme="light">
-          <Menu mode="inline" selectedKeys={selected ? [selected] : []} items={items} />
+        <Sider width={200} theme="light" style={{ borderRight: '1px solid #f0f0f0' }}>
+          <Menu
+            mode="inline"
+            style={{ borderInlineEnd: 'none', paddingTop: 8 }}
+            selectedKeys={selected ? [selected] : []}
+            items={items}
+          />
         </Sider>
-        <Content style={{ padding: 24, background: '#f5f5f5' }}>
+        <Content style={{ padding: 20, background: '#f5f7fa' }}>
           <Outlet />
         </Content>
       </Layout>

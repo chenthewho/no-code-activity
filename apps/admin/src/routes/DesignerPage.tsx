@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Layout, Space, Spin, Tabs, Tag, Tooltip, message, Modal, Input } from 'antd';
+import { Input, Layout, Modal, Spin, Tabs, message } from 'antd';
+import { ApartmentOutlined, AppstoreOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { validateFinalDsl } from '@nca/dsl';
@@ -10,17 +11,29 @@ import { SettingPanel } from '../components/designer/SettingPanel';
 import { IframeCanvasSurface } from '../components/designer/IframeCanvasSurface';
 import { NodeTree } from '../components/designer/NodeTree';
 import { DataSourcePanel } from '../components/designer/DataSourcePanel';
-import { IssueIndicator, formatIssues } from '../components/designer/IssuePanel';
+import { formatIssues } from '../components/designer/IssuePanel';
+import { DesignerHeader, type DeviceMode } from '../components/designer/DesignerHeader';
 
 const AUTOSAVE_DELAY = 1500;
+
+/** 投放机型 → 画布尺寸。桌面按 750 设计稿等宽预览，移动按主流机型宽度 */
+const DEVICE_SIZE: Record<DeviceMode, { width: number; height: number }> = {
+  desktop: { width: 480, height: 800 },
+  mobile: { width: 375, height: 667 },
+};
+
+const RENDERER_ORIGIN = import.meta.env.VITE_RENDERER_ORIGIN ?? 'http://localhost:5180';
 
 export function DesignerPage() {
   const { activityId } = useParams({ from: '/designer/$activityId' });
   const navigate = useNavigate();
-  const { dsl, dirty, load, select, markSaved, undo, redo, past, future } = useDesignerStore();
+  const { dsl, dirty, load, select, markSaved } = useDesignerStore();
   const [savedAt, setSavedAt] = useState<string>('');
   const [publishing, setPublishing] = useState(false);
   const [changelog, setChangelog] = useState('');
+  const [device, setDevice] = useState<DeviceMode>('mobile');
+  const [leftTab, setLeftTab] = useState('materials');
+  const [rightTabKey, setRightTabKey] = useState(0);
 
   const { data: metas = [], isLoading: metaLoading } = useQuery({
     queryKey: ['materials'],
@@ -75,6 +88,27 @@ export function DesignerPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
 
+  // 键盘快捷键：与顶栏「热键」提示保持一致
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      // 正在输入框里打字时不该抢键
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      const store = useDesignerStore.getState();
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) store.redo();
+        else store.undo();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && store.selectedId) {
+        e.preventDefault();
+        store.removeNode(store.selectedId);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
   const publishMutation = useMutation({
     mutationFn: async () => {
       // 发布前先把当前编辑落库，否则发的是上一次自动保存的内容
@@ -116,116 +150,109 @@ export function DesignerPage() {
     },
   });
 
-  const handleSelectFromCanvas = useCallback((nodeId: string) => select(nodeId), [select]);
+  const handleSelectFromCanvas = useCallback(
+    (nodeId: string) => {
+      select(nodeId);
+      // 从画布选中时把右栏切回属性页，省得运营再点一次
+      setRightTabKey((k) => k + 1);
+    },
+    [select],
+  );
 
   /**
    * 本地跑一遍发布级校验，把「发布前必须补齐」的项即时呈现在顶栏。
    * 与后端调用的是 @nca/dsl 里同一个 validateFinalDsl，规则不可能不一致。
    */
-  const pendingIssues = useMemo(() => {
+  const blockingIssues = useMemo(() => {
     const result = validateFinalDsl(dsl, { mode: 'publish' });
-    return result.success ? result.issues : result.issues;
+    return result.issues.filter((i) => i.level === 'error');
   }, [dsl]);
 
-  const blockingIssues = pendingIssues.filter((i) => i.level === 'error');
+  const handlePublish = () => {
+    if (blockingIssues.length > 0) {
+      Modal.warning({
+        title: `还有 ${blockingIssues.length} 处配置待补齐`,
+        content: (
+          <ul style={{ paddingLeft: 18, margin: 0 }}>
+            {formatIssues(blockingIssues).map((text, i) => (
+              <li key={i} style={{ marginBottom: 4 }}>
+                {text}
+              </li>
+            ))}
+          </ul>
+        ),
+      });
+      return;
+    }
+    setPublishing(true);
+  };
 
   if (metaLoading || draftLoading) {
     return (
       <div style={{ display: 'grid', placeItems: 'center', height: '100vh' }}>
-        <Spin size="large" tip="加载设计器" />
+        <Spin size="large" />
       </div>
     );
   }
 
+  const size = DEVICE_SIZE[device];
+
   return (
     <Layout style={{ height: '100vh' }}>
-      <Layout.Header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          height: 56,
-          paddingInline: 16,
-          background: '#fff',
-          borderBottom: '1px solid #f0f0f0',
-        }}
-      >
-        <Space>
-          <Button size="small" onClick={() => void navigate({ to: '/activities' })}>
-            返回
-          </Button>
-          <strong>{dsl.meta.title}</strong>
-          {dirty ? (
-            <Tag color="processing">保存中…</Tag>
-          ) : (
-            <Tag color="success">{savedAt ? `已保存 ${savedAt}` : '已保存'}</Tag>
-          )}
-          <IssueIndicator issues={blockingIssues} />
-        </Space>
-        <Space>
-          <Tooltip title="撤销">
-            <Button size="small" disabled={past.length === 0} onClick={undo}>
-              撤销
-            </Button>
-          </Tooltip>
-          <Tooltip title="重做">
-            <Button size="small" disabled={future.length === 0} onClick={redo}>
-              重做
-            </Button>
-          </Tooltip>
-          <Button size="small" loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-            保存
-          </Button>
-          <Button
-            type="primary"
-            size="small"
-            onClick={() => {
-              if (blockingIssues.length > 0) {
-                Modal.warning({
-                  title: `还有 ${blockingIssues.length} 处配置待补齐`,
-                  content: (
-                    <ul style={{ paddingLeft: 18, margin: 0 }}>
-                      {formatIssues(blockingIssues).map((text, i) => (
-                        <li key={i} style={{ marginBottom: 4 }}>
-                          {text}
-                        </li>
-                      ))}
-                    </ul>
-                  ),
-                });
-                return;
-              }
-              setPublishing(true);
-            }}
-          >
-            发布
-          </Button>
-        </Space>
-      </Layout.Header>
+      <DesignerHeader
+        title={dsl.meta.title}
+        dirty={dirty}
+        savedAt={savedAt}
+        saving={saveMutation.isPending}
+        issues={blockingIssues}
+        device={device}
+        onDeviceChange={setDevice}
+        onBack={() => void navigate({ to: '/activities' })}
+        onSave={() => saveMutation.mutate()}
+        onPublish={handlePublish}
+        onPreview={() => window.open(`${RENDERER_ORIGIN}/?id=${activityId}`, '_blank')}
+        onOpenEvents={() => setLeftTab('data')}
+      />
 
       <Layout>
-        <Layout.Sider width={280} theme="light" style={{ overflow: 'auto' }}>
+        <Layout.Sider width={272} theme="light" style={{ overflow: 'auto', borderRight: '1px solid #f0f0f0' }}>
           <Tabs
             size="small"
             centered
-            style={{ padding: '0 8px' }}
+            activeKey={leftTab}
+            onChange={setLeftTab}
+            style={{ padding: '0 4px' }}
             items={[
               {
                 key: 'materials',
-                label: '组件',
+                label: (
+                  <span>
+                    <AppstoreOutlined /> 组件库
+                  </span>
+                ),
+                children: <MaterialPanel metas={metas} />,
+              },
+              {
+                key: 'tree',
+                label: (
+                  <span>
+                    <ApartmentOutlined /> 结构
+                  </span>
+                ),
                 children: (
-                  <>
-                    <MaterialPanel metas={metas} />
-                    <div style={{ marginTop: 16, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
-                      <div style={{ marginBottom: 8, color: '#888', fontSize: 12 }}>节点树</div>
-                      <NodeTree />
-                    </div>
-                  </>
+                  <div style={{ padding: 8 }}>
+                    <NodeTree />
+                  </div>
                 ),
               },
               {
                 key: 'data',
-                label: `数据源${dsl.dataSources.length > 0 ? ` (${dsl.dataSources.length})` : ''}`,
+                label: (
+                  <span>
+                    <DatabaseOutlined /> 数据
+                    {dsl.dataSources.length > 0 ? ` (${dsl.dataSources.length})` : ''}
+                  </span>
+                ),
                 children: <DataSourcePanel />,
               },
             ]}
@@ -236,12 +263,17 @@ export function DesignerPage() {
           <IframeCanvasSurface
             dsl={dsl}
             onSelectNode={handleSelectFromCanvas}
-            designWidth={375}
+            designWidth={size.width}
+            canvasHeight={size.height}
           />
         </Layout.Content>
 
-        <Layout.Sider width={300} theme="light" style={{ overflow: 'auto', padding: 8 }}>
-          <SettingPanel metas={metas} />
+        <Layout.Sider
+          width={320}
+          theme="light"
+          style={{ overflow: 'auto', borderLeft: '1px solid #f0f0f0' }}
+        >
+          <SettingPanel key={rightTabKey} metas={metas} />
         </Layout.Sider>
       </Layout>
 

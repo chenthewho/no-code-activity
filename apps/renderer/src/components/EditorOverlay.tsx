@@ -120,10 +120,21 @@ export function EditorOverlay() {
 
   if (!editing) return null;
 
+  const selectedNode = selectedId ? dsl.craftJson[selectedId] : undefined;
+
   return (
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9999 }}>
       {hovered && !drop && <Outline box={hovered} color="rgba(22,119,255,.4)" />}
       {selected && !drop && <Outline box={selected} color="#1677ff" width={2} />}
+      {selected && selectedNode && !drop && (
+        <SelectionToolbar
+          box={selected}
+          name={selectedNode.displayName ?? selectedNode.type.resolvedName}
+          hasParent={Boolean(selectedNode.parent)}
+          onSelectParent={() => post(PREVIEW_MESSAGE.SELECT, { nodeId: selectedNode.parent })}
+          onRemove={() => post(PREVIEW_MESSAGE.REMOVE, { nodeId: selectedId })}
+        />
+      )}
       {drop?.hint.mode === 'box' && (
         <div
           style={{
@@ -151,6 +162,70 @@ export function EditorOverlay() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * 选中节点的悬浮工具条。
+ *
+ * 贴在选区上沿，显示组件名与实际渲染尺寸——尺寸是运营调布局时最想知道的信息，
+ * 而右侧面板里的宽高常常是 auto，看不出真实占位。
+ * 空间不够时自动翻到选区下方，避免顶到画布外看不见。
+ */
+function SelectionToolbar({
+  box,
+  name,
+  hasParent,
+  onSelectParent,
+  onRemove,
+}: {
+  box: Box;
+  name: string;
+  hasParent: boolean;
+  onSelectParent: () => void;
+  onRemove: () => void;
+}) {
+  const BAR_HEIGHT = 22;
+  const above = box.top > BAR_HEIGHT + 4;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: above ? box.top - BAR_HEIGHT - 2 : box.top + box.height + 2,
+        left: Math.max(2, box.left),
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        height: BAR_HEIGHT,
+        padding: '0 6px',
+        color: '#fff',
+        fontSize: 11,
+        lineHeight: `${BAR_HEIGHT}px`,
+        whiteSpace: 'nowrap',
+        background: '#1677ff',
+        borderRadius: 3,
+        pointerEvents: 'auto',
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <span style={{ fontWeight: 600 }}>{name}</span>
+      <span style={{ opacity: 0.75 }}>
+        {Math.round(box.width)} × {Math.round(box.height)}
+      </span>
+      {hasParent && (
+        <span
+          title="选中父容器"
+          style={{ cursor: 'pointer', opacity: 0.9 }}
+          onClick={onSelectParent}
+        >
+          ↑
+        </span>
+      )}
+      <span title="删除该组件" style={{ cursor: 'pointer', opacity: 0.9 }} onClick={onRemove}>
+        ✕
+      </span>
     </div>
   );
 }

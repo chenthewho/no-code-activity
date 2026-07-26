@@ -43,7 +43,7 @@ export function ImagePicker({ value, placeholder, onChange }: Props) {
         onCancel={() => setOpen(false)}
         footer={null}
         width={720}
-        destroyOnClose
+        destroyOnHidden
       >
         <Tabs
           items={[

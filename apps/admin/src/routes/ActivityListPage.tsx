@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button, Card, Form, Input, Modal, Space, Table, Tag, message, Popconfirm } from 'antd';
+import { CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { ACTIVITY_STATUS, PERMISSION, type ActivityStatus, type ActivitySummary } from '@nca/shared';
@@ -90,20 +91,29 @@ export function ActivityListPage() {
     },
     {
       title: '操作',
-      width: 220,
+      width: 260,
       render: (_: unknown, row: ActivitySummary) => (
         <Space size="small">
           {can(PERMISSION.ACTIVITY_EDIT) && (
-            <a onClick={() => void navigate({ to: '/designer/$activityId', params: { activityId: row.id } })}>
+            <Button
+              type="link"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => void navigate({ to: '/designer/$activityId', params: { activityId: row.id } })}
+            >
               设计
-            </a>
+            </Button>
           )}
           {can(PERMISSION.ACTIVITY_EDIT) && (
-            <a onClick={() => copyMutation.mutate(row.id)}>复制</a>
+            <Button type="link" size="small" icon={<CopyOutlined />} onClick={() => copyMutation.mutate(row.id)}>
+              复制
+            </Button>
           )}
           {can(PERMISSION.ACTIVITY_DELETE) && (
             <Popconfirm title="确认删除该活动？" onConfirm={() => removeMutation.mutate(row.id)}>
-              <a style={{ color: '#ff4d4f' }}>删除</a>
+              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
             </Popconfirm>
           )}
         </Space>
@@ -126,7 +136,7 @@ export function ActivityListPage() {
             }}
           />
           {can(PERMISSION.ACTIVITY_EDIT) && (
-            <Button type="primary" onClick={() => setCreating(true)}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
               新建活动
             </Button>
           )}

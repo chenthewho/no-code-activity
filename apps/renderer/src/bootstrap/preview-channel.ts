@@ -24,6 +24,8 @@ export const PREVIEW_MESSAGE = {
   DROP_END: 'EDITOR_DROP_END',
   /** R → D：算出的落点（父容器 + 下标），拖拽释放时据此插入 */
   DROP_TARGET: 'EDITOR_DROP_TARGET',
+  /** R → D：从画布上的悬浮工具条请求删除节点 */
+  REMOVE: 'EDITOR_REMOVE_NODE',
 } as const;
 
 export interface PreviewEnvelope {
