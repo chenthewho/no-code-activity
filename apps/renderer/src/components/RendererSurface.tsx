@@ -28,19 +28,28 @@ function PageFrame() {
     if (pageTitle) document.title = pageTitle;
   }, [page.title, title]);
 
-  // vw 适配：把设计稿 px 换算成视口比例，一份稿子适配所有机型宽度。
-  // 用 font-size + rem 而不是 transform scale，避免缩放导致的文字模糊。
+  /**
+   * 移动端适配。根字号恒定为「100 × 视口宽 / 设计稿宽」，配合物料输出的 rem
+   * （1rem = 100 设计像素），一份 750 的稿子就能在任意机型上等比还原。
+   * fixed 模式设成 100px，等价于 1rem = 1 设计像素，即不缩放。
+   */
   useEffect(() => {
-    if (page.adaptMode !== 'vw') return;
     const root = document.documentElement;
     const apply = () => {
+      if (page.adaptMode === 'fixed') {
+        root.style.fontSize = '100px';
+        return;
+      }
+      // 上限两倍稿宽，避免在 PC 上被拉伸到失真
       const width = Math.min(window.innerWidth, page.designWidth * 2);
       root.style.fontSize = `${(width / page.designWidth) * 100}px`;
     };
     apply();
     window.addEventListener('resize', apply);
+    window.addEventListener('orientationchange', apply);
     return () => {
       window.removeEventListener('resize', apply);
+      window.removeEventListener('orientationchange', apply);
       root.style.fontSize = '';
     };
   }, [page.adaptMode, page.designWidth]);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { MATERIAL_CATEGORY } from '@nca/shared';
 import { defineMaterial, type MaterialComponentProps } from '../types';
 import { commonStyleSchema, defineMeta, prop, styleProp } from '../utils/schema';
-import { commonStyle, mergeStyle, toSize, type CommonStyleProps } from '../utils/style';
+import { commonStyle, dp, mergeStyle, toSize, type CommonStyleProps } from '../utils/style';
 
 export interface SwiperItem {
   image: string;
@@ -57,7 +57,7 @@ function Swiper({ children: _children, emit, editing, ...props }: MaterialCompon
       style={mergeStyle(commonStyle(props), {
         overflow: 'hidden',
         position: 'relative',
-        height: toSize(props.height) ?? '320px',
+        height: toSize(props.height) ?? dp(320),
       })}
     >
       <div className="nca-swiper__track" style={trackStyle}>

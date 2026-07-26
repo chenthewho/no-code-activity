@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { MATERIAL_CATEGORY } from '@nca/shared';
 import { defineMaterial, type MaterialComponentProps } from '../types';
 import { commonStyleSchema, defineMeta, prop, styleProp } from '../utils/schema';
-import { commonStyle, mergeStyle, type CommonStyleProps } from '../utils/style';
+import { commonStyle, dp, mergeStyle, type CommonStyleProps } from '../utils/style';
 
 export interface CountdownProps extends CommonStyleProps {
   /** 目标时间，ISO 字符串，通常绑定 {{ meta.endTime }} */
@@ -67,14 +67,14 @@ function Countdown({ children: _children, emit, ...props }: MaterialComponentPro
   }, [target, valid]);
 
   const textStyle: CSSProperties = {
-    fontSize: props.fontSize ? `${props.fontSize}px` : '32px',
+    fontSize: dp(props.fontSize ?? 32),
     color: props.color || '#333333',
   };
   const blockStyle: CSSProperties = props.blockColor
     ? {
         backgroundColor: props.blockColor,
-        borderRadius: `${props.blockRadius ?? 6}px`,
-        padding: '4px 10px',
+        borderRadius: dp(props.blockRadius ?? 6),
+        padding: `${dp(8)} ${dp(20)}`,
       }
     : {};
 

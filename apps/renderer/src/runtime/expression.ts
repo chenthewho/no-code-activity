@@ -322,8 +322,15 @@ export function evaluateExpression(source: string, ctx: ExpressionContext): unkn
   return new Parser(tokenize(source), ctx).parse();
 }
 
-const FULL_BINDING = /^\s*\{\{([\s\S]+?)\}\}\s*$/;
-const INLINE_BINDING = /\{\{([\s\S]+?)\}\}/g;
+/**
+ * 整串绑定：内容里不能再出现 }}。
+ *
+ * 不能写成 \{\{([\s\S]+?)\}\}——惰性量词会跨过中间的 }} 继续找，
+ * 于是 "{{ a }} 与 {{ b }}" 会被当成单个表达式 "a }} 与 {{ b" 求值失败。
+ * 这里用 tempered greedy token 把内容限制在第一个 }} 之前。
+ */
+const FULL_BINDING = /^\s*\{\{((?:(?!\}\})[\s\S])+)\}\}\s*$/;
+const INLINE_BINDING = /\{\{((?:(?!\}\})[\s\S])+)\}\}/g;
 
 /**
  * 解析可能含 {{ }} 的字符串。

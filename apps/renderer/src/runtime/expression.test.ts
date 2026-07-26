@@ -70,6 +70,16 @@ describe('evaluateBinding', () => {
     expect(evaluateBinding('当前 {{ state.count }} 人参与', ctx)).toBe('当前 3 人参与');
   });
 
+  it('一串里多个绑定都要各自求值', () => {
+    expect(evaluateBinding('{{ state.name }} 共 {{ state.count }} 次', ctx)).toBe('张三 共 3 次');
+  });
+
+  it('多个绑定且以 }} 结尾时不被当成单个表达式吞掉', () => {
+    // 惰性量词若跨过中间的 }}，整串会被误判为一个表达式并求值失败变成空
+    expect(evaluateBinding('{{ state.name }} · {{ state.count }}', ctx)).toBe('张三 · 3');
+    expect(evaluateBinding('{{ meta.title }}{{ state.count }}', ctx)).toBe('七夕活动3');
+  });
+
   it('无绑定原样返回', () => {
     expect(evaluateBinding('纯文本', ctx)).toBe('纯文本');
   });

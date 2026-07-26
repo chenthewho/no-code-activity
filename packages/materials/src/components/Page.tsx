@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { MATERIAL_CATEGORY } from '@nca/shared';
 import { defineMaterial, type MaterialComponentProps } from '../types';
 import { defineMeta, styleProp } from '../utils/schema';
-import { toSize } from '../utils/style';
+import { dp, toSize } from '../utils/style';
 
 export interface PageProps {
   backgroundColor?: string;
@@ -20,7 +20,7 @@ function Page({ children, ...props }: MaterialComponentProps<PageProps>) {
     backgroundRepeat: props.backgroundRepeat ?? 'no-repeat',
     backgroundSize: props.backgroundSize ?? '100% auto',
     minHeight: toSize(props.minHeight) ?? '100vh',
-    paddingBottom: props.paddingBottom ? `${props.paddingBottom}px` : undefined,
+    paddingBottom: props.paddingBottom ? dp(props.paddingBottom) : undefined,
   };
   return (
     <div className="nca-page" style={style}>

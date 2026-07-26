@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { MATERIAL_CATEGORY } from '@nca/shared';
 import { defineMaterial, type MaterialComponentProps } from '../types';
 import { commonStyleSchema, defineMeta, prop, styleProp } from '../utils/schema';
-import { commonStyle, mergeStyle, toSize, type CommonStyleProps } from '../utils/style';
+import { commonStyle, dp, mergeStyle, toSize, type CommonStyleProps } from '../utils/style';
 
 export interface ButtonProps extends CommonStyleProps {
   text?: string;
@@ -20,15 +20,15 @@ function Button({ children: _children, emit, ...props }: MaterialComponentProps<
   const disabled = Boolean(props.disabled);
   const style: CSSProperties = {
     color: props.color || '#ffffff',
-    fontSize: props.fontSize ? `${props.fontSize}px` : '30px',
+    fontSize: dp(props.fontSize ?? 30),
     fontWeight: props.fontWeight ?? 'bold',
     backgroundImage: props.backgroundImage ? `url(${props.backgroundImage})` : undefined,
     backgroundSize: props.backgroundImage ? '100% 100%' : undefined,
     backgroundColor: props.backgroundImage ? 'transparent' : props.backgroundColor || '#1677ff',
     borderRadius:
-      props.shape === 'rect' ? `${props.borderRadius ?? 8}px` : `${props.borderRadius ?? 999}px`,
-    width: toSize(props.width) ?? '400px',
-    height: toSize(props.height) ?? '88px',
+      props.shape === 'rect' ? dp(props.borderRadius ?? 8) : dp(props.borderRadius ?? 999),
+    width: toSize(props.width) ?? dp(400),
+    height: toSize(props.height) ?? dp(88),
     opacity: disabled ? 0.5 : props.opacity,
   };
   return (

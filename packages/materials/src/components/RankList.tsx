@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { MATERIAL_CATEGORY } from '@nca/shared';
 import { defineMaterial, type MaterialComponentProps } from '../types';
 import { commonStyleSchema, defineMeta, prop, styleProp } from '../utils/schema';
-import { commonStyle, mergeStyle, type CommonStyleProps } from '../utils/style';
+import { commonStyle, dp, mergeStyle, type CommonStyleProps } from '../utils/style';
 
 export interface RankListProps extends CommonStyleProps {
   /** 通常绑定 {{ dataSource.rank }} */
@@ -32,9 +32,9 @@ function RankList({ children: _children, emit, ...props }: MaterialComponentProp
   const avatarKey = props.avatarKey || 'avatar';
 
   const rowStyle: CSSProperties = {
-    height: `${props.rowHeight ?? 96}px`,
+    height: dp(props.rowHeight ?? 96),
     color: props.color || '#333333',
-    fontSize: props.fontSize ? `${props.fontSize}px` : '28px',
+    fontSize: dp(props.fontSize ?? 28),
   };
 
   if (list.length === 0) {

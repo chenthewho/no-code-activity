@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { MATERIAL_CATEGORY } from '@nca/shared';
 import { defineMaterial, type MaterialComponentProps } from '../types';
 import { commonStyleSchema, defineMeta, prop, styleProp } from '../utils/schema';
-import { commonStyle, mergeStyle, type CommonStyleProps } from '../utils/style';
+import { commonStyle, dp, mergeStyle, type CommonStyleProps } from '../utils/style';
 
 export interface TextProps extends CommonStyleProps {
   content?: string;
@@ -19,12 +19,12 @@ export interface TextProps extends CommonStyleProps {
 function Text({ children: _children, emit, ...props }: MaterialComponentProps<TextProps>) {
   const rows = props.ellipsisRows ?? 0;
   const style: CSSProperties = {
-    fontSize: props.fontSize ? `${props.fontSize}px` : undefined,
+    fontSize: props.fontSize ? dp(props.fontSize) : undefined,
     color: props.color || undefined,
     fontWeight: props.fontWeight ?? 'normal',
     textAlign: props.textAlign ?? 'left',
     lineHeight: props.lineHeight ?? 1.5,
-    letterSpacing: props.letterSpacing ? `${props.letterSpacing}px` : undefined,
+    letterSpacing: props.letterSpacing ? dp(props.letterSpacing) : undefined,
     ...(rows > 0
       ? {
           display: '-webkit-box',

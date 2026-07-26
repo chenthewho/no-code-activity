@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { MATERIAL_CATEGORY } from '@nca/shared';
 import { defineMaterial, type MaterialComponentProps } from '../types';
 import { commonStyleSchema, defineMeta, prop } from '../utils/schema';
-import { commonStyle, mergeStyle, type CommonStyleProps } from '../utils/style';
+import { commonStyle, dp, mergeStyle, type CommonStyleProps } from '../utils/style';
 
 export interface ContainerProps extends CommonStyleProps {
   direction?: 'row' | 'column';
@@ -22,11 +22,11 @@ function Container({ children, ...props }: MaterialComponentProps<ContainerProps
     flexDirection: props.direction ?? 'column',
     justifyContent: props.justify ?? 'flex-start',
     alignItems: props.align ?? 'stretch',
-    gap: props.gap ? `${props.gap}px` : undefined,
+    gap: props.gap ? dp(props.gap) : undefined,
     flexWrap: props.wrap ? 'wrap' : undefined,
     position: props.position === 'static' ? undefined : props.position,
-    top: props.top === undefined ? undefined : `${props.top}px`,
-    left: props.left === undefined ? undefined : `${props.left}px`,
+    top: props.top === undefined ? undefined : dp(props.top),
+    left: props.left === undefined ? undefined : dp(props.left),
     zIndex: props.zIndex,
   };
   return (

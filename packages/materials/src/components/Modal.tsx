@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { MATERIAL_CATEGORY } from '@nca/shared';
 import { defineMaterial, type MaterialComponentProps } from '../types';
 import { defineMeta, prop, styleProp } from '../utils/schema';
-import { toSize } from '../utils/style';
+import { dp, toSize } from '../utils/style';
 
 export interface ModalProps {
   /** 由运行时的弹窗管理器注入，DSL 里通过 modal.open / modal.close 动作控制 */
@@ -21,12 +21,12 @@ export interface ModalProps {
 
 function Modal({ children, emit, editing, ...props }: MaterialComponentProps<ModalProps>) {
   const panelStyle: CSSProperties = {
-    width: toSize(props.width) ?? '600px',
+    width: toSize(props.width) ?? dp(600),
     backgroundColor: props.backgroundImage ? 'transparent' : props.backgroundColor || '#ffffff',
     backgroundImage: props.backgroundImage ? `url(${props.backgroundImage})` : undefined,
     backgroundSize: '100% 100%',
-    borderRadius: `${props.borderRadius ?? 16}px`,
-    padding: `${props.padding ?? 32}px`,
+    borderRadius: dp(props.borderRadius ?? 16),
+    padding: dp(props.padding ?? 32),
   };
 
   const closeBtn = props.showClose !== false && (
