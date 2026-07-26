@@ -18,6 +18,16 @@ export function nodeAtPoint(x: number, y: number): { nodeId: string; el: HTMLEle
   return nodeId ? { nodeId, el: tagged } : null;
 }
 
+/** excludeId 及其子树都不能作为落点——把节点拖进自己里面会让节点树脱环 */
+function isInsideSubtree(nodeId: string, rootId: string, tree: CraftJson): boolean {
+  let cursor: string | null | undefined = nodeId;
+  while (cursor) {
+    if (cursor === rootId) return true;
+    cursor = tree[cursor]?.parent ?? null;
+  }
+  return false;
+}
+
 export function findElement(nodeId: string): HTMLElement | null {
   const el = document.querySelector(`[data-nca-node="${CSS.escape(nodeId)}"]`);
   return el instanceof HTMLElement ? el : null;
@@ -29,8 +39,20 @@ export function findElement(nodeId: string): HTMLElement | null {
  * 规则：命中容器且指针在其中部 → 放进容器；否则按指针在命中节点的上半/下半
  * 决定插到它前面还是后面。这样既能往空容器里放，也能在兄弟之间精确插队。
  */
-export function computeDropTarget(x: number, y: number, tree: CraftJson): DropTarget {
-  const hit = nodeAtPoint(x, y);
+export function computeDropTarget(
+  x: number,
+  y: number,
+  tree: CraftJson,
+  excludeId?: string,
+): DropTarget {
+  let hit = nodeAtPoint(x, y);
+
+  // 命中的是被拖节点自己或其子孙时，往上找一个合法的落点容器
+  if (hit && excludeId && isInsideSubtree(hit.nodeId, excludeId, tree)) {
+    const parentId = tree[excludeId]?.parent;
+    const parentEl = parentId ? findElement(parentId) : null;
+    hit = parentId && parentEl ? { nodeId: parentId, el: parentEl } : null;
+  }
 
   if (!hit) {
     return fallbackToRoot(tree);
@@ -48,7 +70,7 @@ export function computeDropTarget(x: number, y: number, tree: CraftJson): DropTa
     const innerTop = rect.top + rect.height * 0.2;
     const innerBottom = rect.bottom - rect.height * 0.2;
     if (y >= innerTop && y <= innerBottom) {
-      const index = indexInsideContainer(nodeId, y, tree);
+      const index = indexInsideContainer(nodeId, y, tree, excludeId);
       return {
         parentId: nodeId,
         index,
@@ -85,9 +107,15 @@ export function computeDropTarget(x: number, y: number, tree: CraftJson): DropTa
 }
 
 /** 在容器内按已有子节点的位置找插入下标 */
-function indexInsideContainer(containerId: string, y: number, tree: CraftJson): number {
+function indexInsideContainer(
+  containerId: string,
+  y: number,
+  tree: CraftJson,
+  excludeId?: string,
+): number {
   const children = tree[containerId]?.nodes ?? [];
   for (let i = 0; i < children.length; i++) {
+    if (children[i] === excludeId) continue;
     const childEl = findElement(children[i] as string);
     if (!childEl) continue;
     const rect = childEl.getBoundingClientRect();

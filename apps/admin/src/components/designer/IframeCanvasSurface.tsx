@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react';
-import type { FinalDsl } from '@nca/dsl';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { FinalDsl, JsonValue } from '@nca/dsl';
 import { useDesignerStore } from '../../stores/designer';
 import { PREVIEW_MESSAGE, PreviewFrame, type PreviewFrameHandle } from './PreviewFrame';
 
@@ -27,17 +27,68 @@ export function IframeCanvasSurface({
   const dragging = useDesignerStore((s) => s.dragging);
   const setDropTarget = useDesignerStore((s) => s.setDropTarget);
 
+  /** 缩放/移动进行中：此时由父窗口接管指针，坐标转发进 iframe */
+  const [capturing, setCapturing] = useState(false);
+
   const handleMessage = useCallback(
     (type: string, payload: Record<string, unknown> | undefined) => {
-      if (type === PREVIEW_MESSAGE.SELECT && typeof payload?.nodeId === 'string') {
-        onSelectNode?.(payload.nodeId);
-      } else if (type === PREVIEW_MESSAGE.REMOVE && typeof payload?.nodeId === 'string') {
-        useDesignerStore.getState().removeNode(payload.nodeId);
-      } else if (type === PREVIEW_MESSAGE.DROP_TARGET) {
-        setDropTarget({
-          parentId: String(payload?.parentId ?? 'ROOT'),
-          index: Number(payload?.index ?? 0),
-        });
+      const store = useDesignerStore.getState();
+
+      switch (type) {
+        case PREVIEW_MESSAGE.SELECT:
+          if (typeof payload?.nodeId === 'string') onSelectNode?.(payload.nodeId);
+          break;
+
+        case PREVIEW_MESSAGE.REMOVE:
+          if (typeof payload?.nodeId === 'string') store.removeNode(payload.nodeId);
+          break;
+
+        case PREVIEW_MESSAGE.DROP_TARGET:
+          setDropTarget({
+            parentId: String(payload?.parentId ?? 'ROOT'),
+            index: Number(payload?.index ?? 0),
+          });
+          break;
+
+        case PREVIEW_MESSAGE.CAPTURE_START:
+          setCapturing(true);
+          break;
+
+        case PREVIEW_MESSAGE.UPDATE_PROPS:
+          // 一次拖拽只回写一次，对应一步撤销
+          if (typeof payload?.nodeId === 'string' && payload.patch) {
+            store.updateProps(payload.nodeId, payload.patch as Record<string, JsonValue>);
+          }
+          break;
+
+        case PREVIEW_MESSAGE.SHORTCUT: {
+          const action = payload?.action;
+          if (action === 'undo') store.undo();
+          else if (action === 'redo') store.redo();
+          else if (action === 'delete' && store.selectedId) store.removeNode(store.selectedId);
+          break;
+        }
+
+        case PREVIEW_MESSAGE.DRAG_NODE_END:
+          store.endDrag();
+          break;
+
+        case PREVIEW_MESSAGE.DRAG_NODE:
+          // 流式节点的「移动」语义是重排，走与工具箱拖入相同的落点流程
+          if (typeof payload?.nodeId === 'string') {
+            const node = store.dsl.craftJson[payload.nodeId];
+            if (node) {
+              store.startDrag({
+                materialName: node.type.resolvedName,
+                defaultProps: {},
+                nodeId: payload.nodeId,
+              });
+            }
+          }
+          break;
+
+        default:
+          break;
       }
     },
     [onSelectNode, setDropTarget],
@@ -49,9 +100,9 @@ export function IframeCanvasSurface({
   }, [selectedId, dsl]);
 
   /**
-   * 拖拽期间把 iframe 的 pointer-events 关掉（interactive=false）。
-   * 否则指针一进 iframe，事件就全被它吞掉，父窗口再也收不到 mousemove——
-   * 关掉之后父窗口拿到坐标，换算成 iframe 内坐标发给渲染器做命中测试。
+   * 拖拽重排：把 iframe 的 pointer-events 关掉后由父窗口收 mousemove，
+   * 换算成 iframe 内坐标发给渲染器做命中测试。
+   * 否则指针一进 iframe，事件就全被它吞掉，父窗口再也收不到。
    */
   useEffect(() => {
     if (!dragging) return;
@@ -66,7 +117,8 @@ export function IframeCanvasSurface({
         setDropTarget(null);
         return;
       }
-      frameRef.current?.post(PREVIEW_MESSAGE.DROP_PROBE, { x, y });
+      // 拖已有节点时要排除它自己，否则会提示「拖进自己里面」
+      frameRef.current?.post(PREVIEW_MESSAGE.DROP_PROBE, { x, y, excludeId: dragging.nodeId });
     };
 
     document.addEventListener('mousemove', onMove);
@@ -75,6 +127,44 @@ export function IframeCanvasSurface({
       frameRef.current?.post(PREVIEW_MESSAGE.DROP_END);
     };
   }, [dragging, setDropTarget]);
+
+  /**
+   * 缩放/移动时父窗口只做补位转发。
+   *
+   * 注意这里不能像重排那样关掉 iframe 的 pointer-events：鼠标已在 iframe 内按下，
+   * 事件被它隐式捕获，中途改样式抢不回这一次拖拽，反而会让画布彻底收不到移动。
+   * 主力跟踪在 iframe 内部，父窗口只在指针移出画布时补上坐标。
+   */
+  useEffect(() => {
+    if (!capturing) return;
+
+    const onMove = (e: MouseEvent) => {
+      const rect = frameRef.current?.getRect();
+      if (!rect) return;
+      frameRef.current?.post(PREVIEW_MESSAGE.POINTER, {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      });
+    };
+    const onUp = () => {
+      frameRef.current?.post(PREVIEW_MESSAGE.CAPTURE_END);
+      setCapturing(false);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, [capturing]);
+
+  /**
+   * 只有从工具箱发起的拖拽才需要关掉 iframe 的指针事件——那时鼠标在父窗口按下，
+   * 得让它在指针飘过画布时仍能收到 mousemove。
+   * 画布内发起的拖拽相反：关掉就等于把事件从正在跟踪的画布手里夺走。
+   */
+  const interactive = !(dragging && !dragging.nodeId);
 
   return (
     <div
@@ -86,6 +176,8 @@ export function IframeCanvasSurface({
         padding: 16,
         overflow: 'auto',
         background: '#f0f2f5',
+        // 拖动时锁掉文本选中，否则整页文字会被刷蓝
+        userSelect: dragging || capturing ? 'none' : undefined,
       }}
     >
       <PreviewFrame
@@ -93,7 +185,7 @@ export function IframeCanvasSurface({
         dsl={dsl}
         width={designWidth}
         height={canvasHeight}
-        interactive={!dragging}
+        interactive={interactive}
         onMessage={handleMessage}
       />
     </div>

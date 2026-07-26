@@ -26,6 +26,29 @@ export const PREVIEW_MESSAGE = {
   DROP_TARGET: 'EDITOR_DROP_TARGET',
   /** R → D：从画布上的悬浮工具条请求删除节点 */
   REMOVE: 'EDITOR_REMOVE_NODE',
+
+  /**
+   * 缩放 / 移动的指针捕获协议。
+   *
+   * 拖动很容易越出画布边界，而 iframe 只在指针位于其内部时才收得到 mousemove。
+   * 所以由父窗口接管指针：捕获期间关掉 iframe 的 pointer-events，
+   * 父窗口把换算后的坐标持续转发进来，松手时再回传一次最终值。
+   */
+  CAPTURE_START: 'EDITOR_CAPTURE_START',
+  POINTER: 'EDITOR_POINTER',
+  CAPTURE_END: 'EDITOR_CAPTURE_END',
+  /** R → D：把缩放/移动的结果写回节点 props（一次拖拽只提交一次，对应一步撤销） */
+  UPDATE_PROPS: 'EDITOR_UPDATE_PROPS',
+  /** R → D：请求以流式重排的方式拖动已有节点 */
+  DRAG_NODE: 'EDITOR_DRAG_NODE',
+  /** R → D：画布内发起的重排已松手，请设计器落库 */
+  DRAG_NODE_END: 'EDITOR_DRAG_NODE_END',
+  /**
+   * R → D：把画布内按下的快捷键转交给设计器。
+   * 点过画布后焦点就在 iframe 里，父窗口的 keydown 再也收不到，
+   * 不转发的话「点组件 → ⌘Z」这条最常用的路径直接失效。
+   */
+  SHORTCUT: 'EDITOR_SHORTCUT',
 } as const;
 
 export interface PreviewEnvelope {
