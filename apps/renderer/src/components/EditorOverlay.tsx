@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ROOT_NODE_ID } from '@nca/shared';
 import { PREVIEW_MESSAGE } from '../bootstrap/preview-channel';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import { computeDropTarget, findElement, nodeAtPoint, type DropTarget } from '../runtime/hit-test';
@@ -7,12 +8,20 @@ import {
   applyResize,
   buildPatch,
   canvasScale,
+  freeLayoutPatch,
   HANDLES,
   isAbsolute,
+  offsetInContainingBlock,
   toDesignPx,
   type Box,
   type TransformSession,
 } from '../runtime/transform';
+
+/**
+ * 越过这个距离才算拖拽，否则算点选。
+ * 没有阈值的话，选中组件时手抖几像素就会把它拖离原位或改掉排序。
+ */
+const DRAG_THRESHOLD = 4;
 
 /** 位置判等，用来避免「新对象 → setState → 重渲染」的自我循环 */
 function sameBox(a: Box | null, b: Box | null): boolean {
@@ -44,6 +53,9 @@ export function EditorOverlay() {
   const reorderRef = useRef<string | null>(null);
   reorderRef.current = reorderId;
 
+  /** 已按下但还没越过阈值的组件本体，越过后才升级成真正的拖拽 */
+  const pendingRef = useRef<{ nodeId: string; x: number; y: number } | null>(null);
+
   const boxOf = (nodeId: string): Box | null => {
     const el = findElement(nodeId);
     if (!el) return null;
@@ -59,61 +71,59 @@ export function EditorOverlay() {
 
   /** 起手：告诉父窗口接管指针，之后坐标由它转发进来 */
   const beginTransform = useCallback(
-    (nodeId: string, mode: TransformSession['mode'], e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const box = boxOf(nodeId);
-      if (!box) return;
-      const node = dsl.craftJson[nodeId];
+    (nodeId: string, mode: TransformSession['mode'], x: number, y: number) => {
+      const el = findElement(nodeId);
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const offset = offsetInContainingBlock(el);
 
       setSession({
         nodeId,
         mode,
-        startX: e.clientX,
-        startY: e.clientY,
-        startBox: box,
-        startTop: Number(node?.props?.top ?? 0),
-        startLeft: Number(node?.props?.left ?? 0),
-        box,
+        startX: x,
+        startY: y,
+        startBox: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+        startTop: offset.top,
+        startLeft: offset.left,
+        box: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
       });
       post(PREVIEW_MESSAGE.CAPTURE_START, { nodeId });
     },
-    [dsl.craftJson, post],
+    [post],
   );
 
-  // 点选与悬停
-  useEffect(() => {
-    if (!editing) return;
+  /**
+   * 拖组件本体的语义按定位方式分流：
+   * 自由摆放的节点改坐标，流式节点走重排——页面是流式布局，
+   * 把两者混成一件事只会让「我明明拖到那儿了它却弹回来」。
+   */
+  const startNodeDrag = useCallback(
+    (nodeId: string, x: number, y: number) => {
+      if (nodeId === ROOT_NODE_ID) return;
+      if (isAbsolute(dsl.craftJson[nodeId])) {
+        beginTransform(nodeId, { kind: 'move' }, x, y);
+      } else {
+        setReorderId(nodeId);
+        post(PREVIEW_MESSAGE.DRAG_NODE, { nodeId });
+      }
+    },
+    [dsl.craftJson, beginTransform, post],
+  );
 
-    const onClick = (e: MouseEvent) => {
-      const hit = nodeAtPoint(e.clientX, e.clientY);
-      if (!hit) return;
-      // 编辑态下点击不该触发按钮跳转等真实行为
-      e.preventDefault();
-      e.stopPropagation();
-      setSelectedId(hit.nodeId);
-      post(PREVIEW_MESSAGE.SELECT, { nodeId: hit.nodeId });
-    };
-
-    const onMove = (e: MouseEvent) => {
-      if (sessionRef.current) return;
-      const hit = nodeAtPoint(e.clientX, e.clientY);
-      const next = hit ? boxOf(hit.nodeId) : null;
-      // 同样要判等：鼠标每动一像素都换新对象的话，会白白触发一轮重渲染
-      setHovered((prev) => (sameBox(prev, next) ? prev : next));
-    };
-
-    const onLeave = () => setHovered(null);
-
-    document.addEventListener('click', onClick, true);
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseleave', onLeave);
-    return () => {
-      document.removeEventListener('click', onClick, true);
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseleave', onLeave);
-    };
-  }, [editing, post]);
+  /** 在流式与自由摆放之间切换。转过去时补齐坐标和宽度，保证视觉上原地不动 */
+  const toggleFreeLayout = useCallback(
+    (nodeId: string) => {
+      const node = dsl.craftJson[nodeId];
+      if (isAbsolute(node)) {
+        post(PREVIEW_MESSAGE.UPDATE_PROPS, { nodeId, patch: { position: 'static' } });
+        return;
+      }
+      const el = findElement(nodeId);
+      if (!el) return;
+      post(PREVIEW_MESSAGE.UPDATE_PROPS, { nodeId, patch: freeLayoutPatch(el, node) });
+    },
+    [dsl.craftJson, post],
+  );
 
   /** 把一次拖拽的结果提交给设计器。重复调用是安全的——session 已清空就直接返回 */
   const finishTransform = useCallback(() => {
@@ -134,6 +144,86 @@ export function EditorOverlay() {
     const next = current.mode.kind === 'resize' ? applyResize(current, x, y) : applyMove(current, x, y);
     setSession({ ...current, box: next });
   }, []);
+
+  // 点选、悬停，以及「按下组件本体」的拖拽起手
+  useEffect(() => {
+    if (!editing) return;
+
+    /**
+     * 选中放在 mousedown 而不是 click：拖拽从按下那一刻就开始，
+     * 等到 click 再选的话，整段拖拽过程里选中框还停在上一个组件上。
+     */
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      const hit = nodeAtPoint(e.clientX, e.clientY);
+      if (!hit) return;
+      setSelectedId(hit.nodeId);
+      post(PREVIEW_MESSAGE.SELECT, { nodeId: hit.nodeId });
+      pendingRef.current = { nodeId: hit.nodeId, x: e.clientX, y: e.clientY };
+    };
+
+    const onClick = (e: MouseEvent) => {
+      const hit = nodeAtPoint(e.clientX, e.clientY);
+      if (!hit) return;
+      // 编辑态下点击不该触发按钮跳转等真实行为
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const onMove = (e: MouseEvent) => {
+      const pending = pendingRef.current;
+      if (pending) {
+        if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) < DRAG_THRESHOLD) return;
+        pendingRef.current = null;
+        // 以按下点为起手基准，这样越过阈值时元素不会突然跳 4 像素
+        startNodeDrag(pending.nodeId, pending.x, pending.y);
+        return;
+      }
+      if (sessionRef.current || reorderRef.current) return;
+      const hit = nodeAtPoint(e.clientX, e.clientY);
+      const next = hit ? boxOf(hit.nodeId) : null;
+      // 同样要判等：鼠标每动一像素都换新对象的话，会白白触发一轮重渲染
+      setHovered((prev) => (sameBox(prev, next) ? prev : next));
+    };
+
+    /**
+     * 这个 mouseup 全程挂着，兜住「按下即松手」的极快拖拽：
+     * session 专属的监听要等一次重渲染才挂上，那之前松手就会漏掉，
+     * 于是拖拽结束了却还在跟指针走。
+     */
+    const onUp = () => {
+      pendingRef.current = null;
+      finishTransform();
+    };
+    const onLeave = () => setHovered(null);
+    // 编辑态下按住图片会触发浏览器原生拖图，把拖拽整个吞掉
+    const onDragStart = (e: DragEvent) => e.preventDefault();
+
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('click', onClick, true);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('mouseleave', onLeave);
+    document.addEventListener('dragstart', onDragStart);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('click', onClick, true);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mouseleave', onLeave);
+      document.removeEventListener('dragstart', onDragStart);
+    };
+  }, [editing, post, startNodeDrag, finishTransform]);
+
+  /** 编辑态锁掉文本选中：拖组件时整页文字被刷蓝，既难看又会干扰命中判断 */
+  useEffect(() => {
+    if (!editing) return;
+    const previous = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+    return () => {
+      document.body.style.userSelect = previous;
+    };
+  }, [editing]);
 
   /**
    * 画布内发起的重排，落点也由画布自己算。
@@ -240,6 +330,19 @@ export function EditorOverlay() {
         return;
       }
 
+      // 设置器把「改成自由摆放」派过来了：量出当前位置，连坐标一起回传
+      if (type === PREVIEW_MESSAGE.MEASURE_FREE) {
+        const nodeId = payload?.nodeId as string | undefined;
+        if (!nodeId) return;
+        const el = findElement(nodeId);
+        const patch = el
+          ? freeLayoutPatch(el, dsl.craftJson[nodeId])
+          : // 量不到也得把定位方式落下，否则下拉框看着像没反应
+            { position: 'absolute' };
+        post(PREVIEW_MESSAGE.UPDATE_PROPS, { nodeId, patch });
+        return;
+      }
+
       // 指针移出画布时由父窗口补位转发
       if (type === PREVIEW_MESSAGE.POINTER) {
         trackPointer(Number(payload?.x ?? 0), Number(payload?.y ?? 0));
@@ -292,17 +395,12 @@ export function EditorOverlay() {
               absolute={isAbsolute(selectedNode)}
               onSelectParent={() => post(PREVIEW_MESSAGE.SELECT, { nodeId: selectedNode.parent })}
               onRemove={() => post(PREVIEW_MESSAGE.REMOVE, { nodeId: selectedId })}
+              onToggleFree={() => selectedId && toggleFreeLayout(selectedId)}
               onMoveStart={(e) => {
                 if (!selectedId) return;
-                // 绝对定位才能拖到任意位置；流式节点交给父窗口走重排流程
-                if (isAbsolute(selectedNode)) {
-                  beginTransform(selectedId, { kind: 'move' }, e);
-                } else {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setReorderId(selectedId);
-                  post(PREVIEW_MESSAGE.DRAG_NODE, { nodeId: selectedId });
-                }
+                e.preventDefault();
+                e.stopPropagation();
+                startNodeDrag(selectedId, e.clientX, e.clientY);
               }}
             />
           )}
@@ -313,9 +411,11 @@ export function EditorOverlay() {
                 key={handle.key}
                 box={activeBox}
                 handle={handle}
-                onMouseDown={(e) =>
-                  beginTransform(selectedId, { kind: 'resize', handle: handle.key }, e)
-                }
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  beginTransform(selectedId, { kind: 'resize', handle: handle.key }, e.clientX, e.clientY);
+                }}
               />
             ))}
         </>
@@ -405,6 +505,7 @@ function SelectionToolbar({
   absolute,
   onSelectParent,
   onRemove,
+  onToggleFree,
   onMoveStart,
 }: {
   box: Box;
@@ -416,6 +517,7 @@ function SelectionToolbar({
   absolute: boolean;
   onSelectParent: () => void;
   onRemove: () => void;
+  onToggleFree: () => void;
   onMoveStart: (e: React.MouseEvent) => void;
 }) {
   const BAR_HEIGHT = 22;
@@ -445,6 +547,26 @@ function SelectionToolbar({
       <span style={{ opacity: 0.75 }}>
         {width} × {height}
       </span>
+      {movable && (
+        <span
+          title={
+            absolute
+              ? '改回跟随排版，位置由上下文决定'
+              : '转为自由摆放，之后可以拖到页面任意位置'
+          }
+          style={{
+            cursor: 'pointer',
+            padding: '0 4px',
+            borderRadius: 2,
+            // 亮起表示「此刻可以随便拖」，运营一眼能看出当前处于哪种模式
+            background: absolute ? 'rgba(255,255,255,.9)' : 'rgba(255,255,255,.22)',
+            color: absolute ? '#1677ff' : '#fff',
+          }}
+          onClick={onToggleFree}
+        >
+          自由
+        </span>
+      )}
       {movable && (
         <span
           title={absolute ? '拖动调整位置' : '拖动调整排列顺序'}

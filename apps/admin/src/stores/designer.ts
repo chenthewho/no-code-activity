@@ -33,6 +33,14 @@ interface DesignerState {
   /** 撤销/重做栈，存 DSL 快照 */
   past: FinalDsl[];
   future: FinalDsl[];
+  /**
+   * 反向指令通道，由画布组件挂载时注册。
+   *
+   * 有些改动必须由画布来算——比如「转为自由摆放」要先量出元素当前的渲染位置与宽度，
+   * 而那只有 iframe 里的真实 DOM 知道。面板通过它把活派给画布，结果照常走 UPDATE_PROPS 回来。
+   */
+  askCanvas: ((type: string, payload?: unknown) => void) | null;
+  setCanvasBridge: (fn: ((type: string, payload?: unknown) => void) | null) => void;
 
   load: (dsl: FinalDsl) => void;
   select: (nodeId: string | null) => void;
@@ -107,6 +115,11 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   dropTarget: null,
   past: [],
   future: [],
+  askCanvas: null,
+
+  setCanvasBridge(fn) {
+    set({ askCanvas: fn });
+  },
 
   load(dsl) {
     set({ dsl, selectedId: null, dirty: false, past: [], future: [], dragging: null, dropTarget: null });

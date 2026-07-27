@@ -15,6 +15,8 @@ export interface PageProps {
 
 function Page({ children, ...props }: MaterialComponentProps<PageProps>) {
   const style: CSSProperties = {
+    // 根容器兜住所有自由摆放的元素：顶层节点的 top/left 以整页左上角为原点
+    position: 'relative',
     backgroundColor: props.backgroundColor || '#ffffff',
     backgroundImage: props.backgroundImage ? `url(${props.backgroundImage})` : undefined,
     backgroundRepeat: props.backgroundRepeat ?? 'no-repeat',

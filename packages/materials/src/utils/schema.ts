@@ -39,7 +39,23 @@ const layoutProp = (item: Parameters<typeof styleProp>[0]): PropSchemaItem => ({
   section: 'layout',
 });
 
+/** 只在「自由摆放」下才有意义的坐标项，跟着定位方式一起显隐 */
+const whenAbsolute = "{{ props.position === 'absolute' }}";
+
 export const commonStyleSchema: PropSchemaItem[] = [
+  layoutProp({
+    key: 'position',
+    label: '定位方式',
+    editor: 'select',
+    options: [
+      { label: '跟随排版', value: 'static' },
+      { label: '相对偏移', value: 'relative' },
+      { label: '自由摆放', value: 'absolute' },
+    ],
+  }),
+  layoutProp({ key: 'top', label: '距顶部', editor: 'number', visibleWhen: whenAbsolute }),
+  layoutProp({ key: 'left', label: '距左侧', editor: 'number', visibleWhen: whenAbsolute }),
+  layoutProp({ key: 'zIndex', label: '层级', editor: 'number' }),
   layoutProp({ key: 'width', label: '宽度', editor: 'string', placeholder: '如 100% / 375' }),
   layoutProp({ key: 'height', label: '高度', editor: 'string', placeholder: '如 auto / 200' }),
   layoutProp({ key: 'margin', label: '外边距', editor: 'spacing' }),

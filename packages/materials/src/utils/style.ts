@@ -41,10 +41,20 @@ export interface CommonStyleProps {
   backgroundColor?: string;
   borderRadius?: number;
   opacity?: number;
+  /**
+   * 自由摆放能力对所有物料开放，而不只是容器。
+   * 活动页大量是「按设计稿把按钮压在背景图的某个位置上」，
+   * 若只有容器能绝对定位，运营就得为每个自由摆放的元素套一层容器。
+   */
+  position?: 'static' | 'relative' | 'absolute';
+  top?: number;
+  left?: number;
+  zIndex?: number;
 }
 
-/** 所有物料共用的样式段，保证「宽高/间距/圆角」在设置器里的行为一致 */
+/** 所有物料共用的样式段，保证「宽高/间距/圆角/定位」在设置器里的行为一致 */
 export function commonStyle(props: CommonStyleProps): CSSProperties {
+  const absolute = props.position === 'absolute';
   return {
     width: toSize(props.width),
     height: toSize(props.height),
@@ -53,6 +63,11 @@ export function commonStyle(props: CommonStyleProps): CSSProperties {
     backgroundColor: props.backgroundColor || undefined,
     borderRadius: props.borderRadius ? dp(props.borderRadius) : undefined,
     opacity: props.opacity === undefined ? undefined : props.opacity,
+    position: props.position === 'static' ? undefined : props.position,
+    // 坐标只在绝对定位下生效：切回流式后，残留的 top/left 不该再把元素推走
+    top: absolute && props.top !== undefined ? dp(props.top) : undefined,
+    left: absolute && props.left !== undefined ? dp(props.left) : undefined,
+    zIndex: props.zIndex,
   };
 }
 

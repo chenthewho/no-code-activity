@@ -39,6 +39,14 @@ export const PREVIEW_MESSAGE = {
   CAPTURE_END: 'EDITOR_CAPTURE_END',
   /** R → D：把缩放/移动的结果写回节点 props（一次拖拽只提交一次，对应一步撤销） */
   UPDATE_PROPS: 'EDITOR_UPDATE_PROPS',
+  /**
+   * D → R：请画布算出「转为自由摆放」要写的完整 props。
+   * 设置器里改「定位方式」和工具条上点「自由」必须是同一件事，
+   * 算完再用 UPDATE_PROPS 回传，因此仍然只产生一步撤销。
+   * 而只有画布量得到元素此刻的实际位置与宽度——少了这一步，
+   * 元素会当场脱离文档流并收缩到内容宽，看起来就是「一选绝对定位页面就乱了」。
+   */
+  MEASURE_FREE: 'EDITOR_MEASURE_FREE',
   /** R → D：请求以流式重排的方式拖动已有节点 */
   DRAG_NODE: 'EDITOR_DRAG_NODE',
   /** R → D：画布内发起的重排已松手，请设计器落库 */

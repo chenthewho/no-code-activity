@@ -19,6 +19,7 @@ import { useDesignerStore } from '../../stores/designer';
 import { EventPanel } from './EventPanel';
 import { ControlPanel } from './ControlPanel';
 import { ImagePicker } from './ImagePicker';
+import { PREVIEW_MESSAGE } from './PreviewFrame';
 import { SpacingEditor } from './SpacingEditor';
 
 interface SettingPanelProps {
@@ -31,7 +32,7 @@ interface SettingPanelProps {
  * 这是「物料协议即面板」的核心收益。
  */
 export function SettingPanel({ metas }: SettingPanelProps) {
-  const { dsl, selectedId, updateProps } = useDesignerStore();
+  const { dsl, selectedId, updateProps, askCanvas } = useDesignerStore();
 
   if (!selectedId) {
     return (
@@ -72,6 +73,19 @@ export function SettingPanel({ metas }: SettingPanelProps) {
     },
   ].filter((s) => s.items.length > 0);
 
+  /**
+   * 改成「自由摆放」得连坐标和宽度一起补上，不然元素当场脱离文档流又收缩到内容宽——
+   * 运营看到的是「一选绝对定位页面就乱了」。位置只有画布量得到，所以派给画布算，
+   * 结果照常从 UPDATE_PROPS 回来，仍旧只有一步撤销。
+   */
+  const changeProp = (key: string, value: unknown) => {
+    if (key === 'position' && value === 'absolute' && askCanvas) {
+      askCanvas(PREVIEW_MESSAGE.MEASURE_FREE, { nodeId: selectedId });
+      return;
+    }
+    updateProps(selectedId, { [key]: value as JsonValue });
+  };
+
   const renderItems = (items: PropSchemaItem[]) => {
     const visible = items.filter((item) => isVisible(item, props));
     if (visible.length === 0) {
@@ -98,7 +112,7 @@ export function SettingPanel({ metas }: SettingPanelProps) {
             <PropEditor
               item={item}
               value={props[item.key] ?? item.defaultValue}
-              onChange={(value) => updateProps(selectedId, { [item.key]: value as JsonValue })}
+              onChange={(value) => changeProp(item.key, value)}
             />
           </Form.Item>
         ))}

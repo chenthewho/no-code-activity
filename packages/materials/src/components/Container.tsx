@@ -10,10 +10,6 @@ export interface ContainerProps extends CommonStyleProps {
   align?: 'flex-start' | 'center' | 'flex-end' | 'stretch';
   gap?: number;
   wrap?: boolean;
-  position?: 'static' | 'relative' | 'absolute';
-  top?: number;
-  left?: number;
-  zIndex?: number;
 }
 
 function Container({ children, ...props }: MaterialComponentProps<ContainerProps>) {
@@ -24,10 +20,13 @@ function Container({ children, ...props }: MaterialComponentProps<ContainerProps
     alignItems: props.align ?? 'stretch',
     gap: props.gap ? dp(props.gap) : undefined,
     flexWrap: props.wrap ? 'wrap' : undefined,
-    position: props.position === 'static' ? undefined : props.position,
-    top: props.top === undefined ? undefined : dp(props.top),
-    left: props.left === undefined ? undefined : dp(props.left),
-    zIndex: props.zIndex,
+    /**
+     * 没显式指定时兜底 relative——自由摆放的子元素要以「它所在的容器」为参照系。
+     * 容器若是 static，子元素的坐标会一路上溯到某个祖先甚至整页，
+     * 于是「拖到容器里的这个位置」和最终落点对不上。
+     * relative 本身不改变流式布局，加上没有副作用。
+     */
+    position: props.position ? undefined : 'relative',
   };
   return (
     <div className="nca-container" style={mergeStyle(commonStyle(props), layout)}>
@@ -83,29 +82,7 @@ export const ContainerMaterial = defineMaterial<ContainerProps>({
       }),
       prop({ key: 'gap', label: '子元素间距', editor: 'number', min: 0 }),
       prop({ key: 'wrap', label: '自动换行', editor: 'boolean' }),
-      prop({
-        key: 'position',
-        label: '定位方式',
-        editor: 'select',
-        options: [
-          { label: '默认', value: 'static' },
-          { label: '相对', value: 'relative' },
-          { label: '绝对', value: 'absolute' },
-        ],
-      }),
-      prop({
-        key: 'top',
-        label: '距顶部',
-        editor: 'number',
-        visibleWhen: "{{ props.position === 'absolute' }}",
-      }),
-      prop({
-        key: 'left',
-        label: '距左侧',
-        editor: 'number',
-        visibleWhen: "{{ props.position === 'absolute' }}",
-      }),
-      prop({ key: 'zIndex', label: '层级', editor: 'number' }),
+      // 定位方式 / top / left / zIndex 已由 commonStyleSchema 统一提供
       ...commonStyleSchema,
     ],
   }),

@@ -99,6 +99,13 @@ export function IframeCanvasSurface({
     frameRef.current?.post(PREVIEW_MESSAGE.EDITOR_SELECT, { nodeId: selectedId });
   }, [selectedId, dsl]);
 
+  // 把画布的指令入口交给 store，设置器等面板才有办法请画布代为测量
+  useEffect(() => {
+    const bridge = useDesignerStore.getState().setCanvasBridge;
+    bridge((type, payload) => frameRef.current?.post(type, payload));
+    return () => bridge(null);
+  }, []);
+
   /**
    * 拖拽重排：把 iframe 的 pointer-events 关掉后由父窗口收 mousemove，
    * 换算成 iframe 内坐标发给渲染器做命中测试。

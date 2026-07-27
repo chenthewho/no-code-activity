@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { CraftNode } from '@nca/dsl';
-import { applyMove, applyResize, buildPatch, isAbsolute, type TransformSession } from './transform';
+import {
+  applyMove,
+  applyResize,
+  buildPatch,
+  freeLayoutPatch,
+  isAbsolute,
+  offsetInContainingBlock,
+  type TransformSession,
+} from './transform';
 
 const startBox = { top: 100, left: 50, width: 200, height: 80 };
 
@@ -101,6 +109,86 @@ describe('buildPatch', () => {
     const s = session({ kind: 'move' }, { startTop: 0, startLeft: 0 });
     const patch = buildPatch(s, { ...startBox, top: 100.4 }, node({ position: 'absolute' }));
     expect(patch).toEqual({});
+  });
+});
+
+/** jsdom 不做布局，位置信息只能自己灌进去 */
+function el(rect: Box2, style: Record<string, string> = {}): HTMLElement {
+  const node = document.createElement('div');
+  Object.assign(node.style, style);
+  document.body.appendChild(node);
+  node.getBoundingClientRect = () =>
+    ({
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+    }) as DOMRect;
+  return node;
+}
+
+interface Box2 {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+function withOffsetParent(child: HTMLElement, parent: HTMLElement | null): HTMLElement {
+  Object.defineProperty(child, 'offsetParent', { value: parent, configurable: true });
+  return child;
+}
+
+describe('offsetInContainingBlock', () => {
+  it('相对定位祖先的内边距边取偏移', () => {
+    const parent = el({ top: 100, left: 20, width: 375, height: 600 });
+    const child = withOffsetParent(el({ top: 260, left: 40, width: 200, height: 50 }), parent);
+    expect(offsetInContainingBlock(child)).toEqual({ top: 160, left: 20 });
+  });
+
+  it('扣掉自身外边距——绝对定位下 top 定位的是外边距边', () => {
+    const parent = el({ top: 0, left: 0, width: 375, height: 600 });
+    const child = withOffsetParent(
+      el({ top: 90, left: 30, width: 200, height: 50 }, { marginTop: '10px', marginLeft: '5px' }),
+      parent,
+    );
+    expect(offsetInContainingBlock(child)).toEqual({ top: 80, left: 25 });
+  });
+
+  it('扣掉包含块的边框——rect 给的是边框边，坐标参照的是内边距边', () => {
+    const parent = el({ top: 0, left: 0, width: 375, height: 600 }, { border: '4px solid #000' });
+    const child = withOffsetParent(el({ top: 54, left: 34, width: 100, height: 20 }), parent);
+    expect(offsetInContainingBlock(child)).toEqual({ top: 50, left: 30 });
+  });
+
+  it('没有定位祖先时以文档原点为参照，要把滚动量算回去', () => {
+    const orphan = withOffsetParent(el({ top: -40, left: 12, width: 100, height: 20 }), null);
+    window.scrollY = 200;
+    expect(offsetInContainingBlock(orphan)).toEqual({ top: 160, left: 12 });
+    window.scrollY = 0;
+  });
+});
+
+describe('freeLayoutPatch', () => {
+  it('转自由摆放时补齐坐标与宽度，元素原地不动也不缩水', () => {
+    const parent = el({ top: 0, left: 0, width: 375, height: 600 });
+    const child = withOffsetParent(el({ top: 120, left: 25, width: 325, height: 48 }), parent);
+    expect(freeLayoutPatch(child, node())).toEqual({
+      position: 'absolute',
+      top: 120,
+      left: 25,
+      width: 325,
+    });
+  });
+
+  it('运营已经填过宽度就不覆盖', () => {
+    const parent = el({ top: 0, left: 0, width: 375, height: 600 });
+    const child = withOffsetParent(el({ top: 10, left: 0, width: 325, height: 48 }), parent);
+    const patch = freeLayoutPatch(child, node({ width: '100%' }));
+    expect(patch.width).toBeUndefined();
+    expect(patch.position).toBe('absolute');
   });
 });
 

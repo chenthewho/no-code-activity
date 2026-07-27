@@ -1,4 +1,4 @@
-import type { CraftNode } from '@nca/dsl';
+import type { CraftNode, JsonValue } from '@nca/dsl';
 
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
@@ -20,7 +20,11 @@ export interface TransformSession {
   startX: number;
   startY: number;
   startBox: Box;
-  /** 绝对定位节点起手时的 top/left（设计稿像素） */
+  /**
+   * 起手时元素在包含块内的实际偏移（CSS 像素），从 DOM 量出来而不是读 props。
+   * 读 props 只在「已经摆放过」时才对：刚切成绝对定位、top/left 还是空的时候，
+   * 以 0 为基准算出来的位移会把元素直接甩到容器左上角。
+   */
   startTop: number;
   startLeft: number;
   box: Box;
@@ -97,6 +101,65 @@ export function isAbsolute(node: CraftNode | undefined): boolean {
   return node?.props?.position === 'absolute';
 }
 
+const px = (value: string): number => parseFloat(value) || 0;
+
+/**
+ * 元素当前在其包含块内的偏移，即「若此刻改成绝对定位，要写多少 top/left 才原地不动」。
+ *
+ * 三处修正缺一不可：
+ * - 包含块的参照是内边距边，而 getBoundingClientRect 给的是边框边；
+ * - 绝对定位下 top/left 定位的是外边距边，所以要把自身 margin 扣掉；
+ * - 没有定位祖先时参照系是初始包含块，也就是文档原点，得算上滚动量。
+ */
+export function offsetInContainingBlock(el: HTMLElement): { top: number; left: number } {
+  const rect = el.getBoundingClientRect();
+  const own = getComputedStyle(el);
+  const marginTop = px(own.marginTop);
+  const marginLeft = px(own.marginLeft);
+  const parent = el.offsetParent;
+
+  if (!(parent instanceof HTMLElement)) {
+    return {
+      top: rect.top + window.scrollY - marginTop,
+      left: rect.left + window.scrollX - marginLeft,
+    };
+  }
+
+  const parentRect = parent.getBoundingClientRect();
+  const parentStyle = getComputedStyle(parent);
+  return {
+    top: rect.top - parentRect.top - px(parentStyle.borderTopWidth) - marginTop,
+    left: rect.left - parentRect.left - px(parentStyle.borderLeftWidth) - marginLeft,
+  };
+}
+
+/**
+ * 把一个流式节点转成自由摆放，且视觉上原地不动。
+ *
+ * 必须先量后写：绝对定位会让元素同时脱离文档流并收缩到内容宽度。
+ * 只写 position 不补坐标和宽度的话，元素当场跳位又变窄——
+ * 运营看到的就是「一选绝对定位页面就乱了」，于是再也不敢用。
+ */
+export function freeLayoutPatch(
+  el: HTMLElement,
+  node: CraftNode | undefined,
+): Record<string, JsonValue> {
+  const scale = canvasScale();
+  const offset = offsetInContainingBlock(el);
+  const patch: Record<string, JsonValue> = {
+    position: 'absolute',
+    top: toDesignPx(offset.top, scale),
+    left: toDesignPx(offset.left, scale),
+  };
+
+  // 宽度没填过才冻结当前渲染宽度，避免覆盖运营自己写的 100% / auto
+  const width = node?.props?.width;
+  if (width === undefined || width === null || width === '') {
+    patch.width = toDesignPx(el.getBoundingClientRect().width, scale);
+  }
+  return patch;
+}
+
 /**
  * 把一次拖拽的结果整理成要写回的 props。
  * 只回传真正变了的字段，避免给不涉及的属性平白写上一个值。
@@ -122,8 +185,9 @@ export function buildPatch(
   if (isAbsolute(node)) {
     const dTop = finalBox.top - session.startBox.top;
     const dLeft = finalBox.left - session.startBox.left;
-    if (Math.abs(dTop) >= 1) patch.top = session.startTop + toDesignPx(dTop, scale);
-    if (Math.abs(dLeft) >= 1) patch.left = session.startLeft + toDesignPx(dLeft, scale);
+    // 先在 CSS 像素域里把起点和位移加完再换算，只舍入一次
+    if (Math.abs(dTop) >= 1) patch.top = toDesignPx(session.startTop + dTop, scale);
+    if (Math.abs(dLeft) >= 1) patch.left = toDesignPx(session.startLeft + dLeft, scale);
   }
 
   return patch;
