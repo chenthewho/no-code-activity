@@ -2,6 +2,7 @@ import type { CraftNode, JsonValue } from '@nca/dsl';
 
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
+/** 文档坐标系（含滚动量）下的盒子，覆盖层据此以 absolute 绘制 */
 export interface Box {
   top: number;
   left: number;

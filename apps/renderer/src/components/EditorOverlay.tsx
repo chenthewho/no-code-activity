@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ROOT_NODE_ID } from '@nca/shared';
 import { PREVIEW_MESSAGE } from '../bootstrap/preview-channel';
 import { useRuntime } from '../runtime/RuntimeProvider';
@@ -30,11 +31,34 @@ function sameBox(a: Box | null, b: Box | null): boolean {
   return a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height;
 }
 
+/** 视口坐标 → 文档坐标。命中测试只认视口坐标，覆盖层只认文档坐标 */
+function toDocX(clientX: number): number {
+  return clientX + window.scrollX;
+}
+function toDocY(clientY: number): number {
+  return clientY + window.scrollY;
+}
+
+/** 元素在文档坐标系里的盒子 */
+function docBox(el: HTMLElement): Box {
+  const rect = el.getBoundingClientRect();
+  return {
+    top: toDocY(rect.top),
+    left: toDocX(rect.left),
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
 /**
  * 编辑态交互层：点选、悬停描边、拖拽落点、缩放与移动。
  *
- * 描边与手柄画在 iframe 内部而不是父窗口，省掉一整套坐标换算，
- * 页面滚动时也天然跟随。父窗口只负责发坐标、收结果。
+ * 描边与手柄画在 iframe 内部而不是父窗口，省掉一整套坐标换算。
+ * 父窗口只负责发坐标、收结果。
+ *
+ * 一切都按「文档坐标」记录并以 absolute 定位，画布滚动时描边和手柄
+ * 由浏览器带着一起走。用 fixed + 视口坐标的话，框会钉死在屏幕上，
+ * 页面一滚就和组件脱开；改成滚动时重新测量又必然慢半帧、跟手时会抖。
  */
 export function EditorOverlay() {
   const { dsl, editing } = useRuntime();
@@ -59,8 +83,21 @@ export function EditorOverlay() {
   const boxOf = (nodeId: string): Box | null => {
     const el = findElement(nodeId);
     if (!el) return null;
-    const rect = el.getBoundingClientRect();
-    return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+    return docBox(el);
+  };
+
+  /** 落点提示来自命中测试，那边给的是视口坐标，画之前换算到文档坐标 */
+  const setDocDrop = (target: DropTarget | null) => {
+    setDrop(
+      target && {
+        ...target,
+        hint: {
+          ...target.hint,
+          top: toDocY(target.hint.top),
+          left: toDocX(target.hint.left),
+        },
+      },
+    );
   };
 
   const post = useCallback((type: string, payload?: unknown) => {
@@ -74,18 +111,19 @@ export function EditorOverlay() {
     (nodeId: string, mode: TransformSession['mode'], x: number, y: number) => {
       const el = findElement(nodeId);
       if (!el) return;
-      const rect = el.getBoundingClientRect();
+      const box = docBox(el);
       const offset = offsetInContainingBlock(el);
 
+      // 起手点与盒子都用文档坐标：拖到一半滚动页面时，两边一起走，位移才不会错
       setSession({
         nodeId,
         mode,
         startX: x,
         startY: y,
-        startBox: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+        startBox: box,
         startTop: offset.top,
         startLeft: offset.left,
-        box: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+        box,
       });
       post(PREVIEW_MESSAGE.CAPTURE_START, { nodeId });
     },
@@ -159,7 +197,7 @@ export function EditorOverlay() {
       if (!hit) return;
       setSelectedId(hit.nodeId);
       post(PREVIEW_MESSAGE.SELECT, { nodeId: hit.nodeId });
-      pendingRef.current = { nodeId: hit.nodeId, x: e.clientX, y: e.clientY };
+      pendingRef.current = { nodeId: hit.nodeId, x: toDocX(e.clientX), y: toDocY(e.clientY) };
     };
 
     const onClick = (e: MouseEvent) => {
@@ -173,7 +211,9 @@ export function EditorOverlay() {
     const onMove = (e: MouseEvent) => {
       const pending = pendingRef.current;
       if (pending) {
-        if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) < DRAG_THRESHOLD) return;
+        const x = toDocX(e.clientX);
+        const y = toDocY(e.clientY);
+        if (Math.hypot(x - pending.x, y - pending.y) < DRAG_THRESHOLD) return;
         pendingRef.current = null;
         // 以按下点为起手基准，这样越过阈值时元素不会突然跳 4 像素
         startNodeDrag(pending.nodeId, pending.x, pending.y);
@@ -236,7 +276,7 @@ export function EditorOverlay() {
 
     const onMove = (e: MouseEvent) => {
       const target = computeDropTarget(e.clientX, e.clientY, dsl.craftJson, reorderId);
-      setDrop(target);
+      setDocDrop(target);
       post(PREVIEW_MESSAGE.DROP_TARGET, { parentId: target.parentId, index: target.index });
     };
     const onUp = () => {
@@ -265,7 +305,7 @@ export function EditorOverlay() {
   useEffect(() => {
     if (!editing || !session) return;
 
-    const onMove = (e: MouseEvent) => trackPointer(e.clientX, e.clientY);
+    const onMove = (e: MouseEvent) => trackPointer(toDocX(e.clientX), toDocY(e.clientY));
     const onUp = () => finishTransform();
 
     document.addEventListener('mousemove', onMove);
@@ -320,7 +360,7 @@ export function EditorOverlay() {
         const x = Number(payload?.x ?? 0);
         const y = Number(payload?.y ?? 0);
         const target = computeDropTarget(x, y, dsl.craftJson, payload?.excludeId as string | undefined);
-        setDrop(target);
+        setDocDrop(target);
         post(PREVIEW_MESSAGE.DROP_TARGET, { parentId: target.parentId, index: target.index });
         return;
       }
@@ -343,9 +383,9 @@ export function EditorOverlay() {
         return;
       }
 
-      // 指针移出画布时由父窗口补位转发
+      // 指针移出画布时由父窗口补位转发。它发的是 iframe 内的视口坐标
       if (type === PREVIEW_MESSAGE.POINTER) {
-        trackPointer(Number(payload?.x ?? 0), Number(payload?.y ?? 0));
+        trackPointer(toDocX(Number(payload?.x ?? 0)), toDocY(Number(payload?.y ?? 0)));
         return;
       }
 
@@ -377,8 +417,23 @@ export function EditorOverlay() {
   const scale = canvasScale();
   const isRoot = selectedId === 'ROOT';
 
-  return (
-    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9999 }}>
+  /**
+   * 挂到 body 而不是就地渲染：.nca-surface 是 relative，就地渲染的话
+   * 绝对定位会以它为参照系，页面结构一变覆盖层就整体偏移。
+   * body 无定位，参照系就是文档原点，坐标含义确定。
+   */
+  return createPortal(
+    <div
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: 0,
+        height: 0,
+        pointerEvents: 'none',
+        zIndex: 9999,
+      }}
+    >
       {hovered && !drop && !session && <Outline box={hovered} color="rgba(22,119,255,.4)" />}
 
       {activeBox && !drop && (
@@ -400,7 +455,7 @@ export function EditorOverlay() {
                 if (!selectedId) return;
                 e.preventDefault();
                 e.stopPropagation();
-                startNodeDrag(selectedId, e.clientX, e.clientY);
+                startNodeDrag(selectedId, toDocX(e.clientX), toDocY(e.clientY));
               }}
             />
           )}
@@ -414,7 +469,12 @@ export function EditorOverlay() {
                 onMouseDown={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  beginTransform(selectedId, { kind: 'resize', handle: handle.key }, e.clientX, e.clientY);
+                  beginTransform(
+                    selectedId,
+                    { kind: 'resize', handle: handle.key },
+                    toDocX(e.clientX),
+                    toDocY(e.clientY),
+                  );
                 }}
               />
             ))}
@@ -424,7 +484,7 @@ export function EditorOverlay() {
       {drop?.hint.mode === 'box' && (
         <div
           style={{
-            position: 'fixed',
+            position: 'absolute',
             top: drop.hint.top,
             left: drop.hint.left,
             width: drop.hint.width,
@@ -438,7 +498,7 @@ export function EditorOverlay() {
       {drop?.hint.mode === 'line' && (
         <div
           style={{
-            position: 'fixed',
+            position: 'absolute',
             top: drop.hint.top - 1,
             left: drop.hint.left,
             width: drop.hint.width,
@@ -448,7 +508,8 @@ export function EditorOverlay() {
           }}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -463,19 +524,21 @@ function ResizeHandleDot({
 }) {
   const SIZE = 10;
   /**
-   * 夹到画布可视区内。
-   * 满宽组件的东侧手柄本该骑在边界上，一半会落到 iframe 之外，
-   * 鼠标按下会被父窗口接走，运营根本抓不住它。
+   * 只夹横向。
+   * 满宽组件的东侧手柄本该骑在画布边界上，一半会落到 iframe 之外，
+   * 鼠标按下会被父窗口接走，运营根本抓不住它；而画布不能横向滚动，
+   * 抓不到就是真的抓不到。纵向不夹——超出屏幕的手柄滚过去就能碰到，
+   * 硬夹进视口反而会把它画在一个不属于元素的位置上。
    */
-  const clamp = (value: number, max: number) => Math.max(0, Math.min(value, max - SIZE));
+  const clampX = (value: number) => Math.max(0, Math.min(value, window.innerWidth - SIZE));
 
   return (
     <div
       onMouseDown={onMouseDown}
       style={{
-        position: 'fixed',
-        top: clamp(box.top + box.height * handle.y - SIZE / 2, window.innerHeight),
-        left: clamp(box.left + box.width * handle.x - SIZE / 2, window.innerWidth),
+        position: 'absolute',
+        top: box.top + box.height * handle.y - SIZE / 2,
+        left: clampX(box.left + box.width * handle.x - SIZE / 2),
         width: SIZE,
         height: SIZE,
         background: '#fff',
@@ -521,12 +584,13 @@ function SelectionToolbar({
   onMoveStart: (e: React.MouseEvent) => void;
 }) {
   const BAR_HEIGHT = 22;
+  // 贴在页面最顶端的组件上方没有空间，翻到下沿去
   const above = box.top > BAR_HEIGHT + 4;
 
   return (
     <div
       style={{
-        position: 'fixed',
+        position: 'absolute',
         top: above ? box.top - BAR_HEIGHT - 2 : box.top + box.height + 2,
         left: Math.max(2, box.left),
         display: 'flex',
@@ -592,7 +656,7 @@ function Outline({ box, color, width = 1 }: { box: Box; color: string; width?: n
   return (
     <div
       style={{
-        position: 'fixed',
+        position: 'absolute',
         top: box.top,
         left: box.left,
         width: box.width,
