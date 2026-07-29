@@ -52,10 +52,21 @@ export interface RuntimeProviderProps {
   dsl: FinalDsl;
   /** 设计器预览态：关闭跳转、下载等有副作用的动作 */
   editing?: boolean;
+  /**
+   * 编辑态下要展开的弹窗。
+   * 编辑态里组件的点击被交互层拦下了，`modal.open` 动作根本不会触发，
+   * 所以弹窗的显隐只能由设计器指定，而不是靠运行时状态自己攒出来。
+   */
+  editingModalId?: string | null;
   children: ReactNode;
 }
 
-export function RuntimeProvider({ dsl, editing = false, children }: RuntimeProviderProps) {
+export function RuntimeProvider({
+  dsl,
+  editing = false,
+  editingModalId = null,
+  children,
+}: RuntimeProviderProps) {
   const host = useMemo(() => detectHost(), []);
   const [pageState, setPageState] = useState<Record<string, unknown>>(() => ({
     ...dsl.initialState,
@@ -239,6 +250,12 @@ export function RuntimeProvider({ dsl, editing = false, children }: RuntimeProvi
     };
   }, [dsl.dataSources, buildContext]);
 
+  // 编辑态由设计器说了算，运行时才用动作攒出来的那份
+  const visibleModals = useMemo(
+    () => (editing ? (editingModalId ? [editingModalId] : []) : openModals),
+    [editing, editingModalId, openModals],
+  );
+
   const value = useMemo<RuntimeValue>(
     () => ({
       dsl,
@@ -246,13 +263,24 @@ export function RuntimeProvider({ dsl, editing = false, children }: RuntimeProvi
       host,
       pageState,
       dataSources,
-      openModals,
+      openModals: visibleModals,
       toasts,
       emit,
       buildContext,
       closeModal,
     }),
-    [dsl, editing, host, pageState, dataSources, openModals, toasts, emit, buildContext, closeModal],
+    [
+      dsl,
+      editing,
+      host,
+      pageState,
+      dataSources,
+      visibleModals,
+      toasts,
+      emit,
+      buildContext,
+      closeModal,
+    ],
   );
 
   return <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>;

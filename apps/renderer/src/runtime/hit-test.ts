@@ -34,6 +34,21 @@ export function findElement(nodeId: string): HTMLElement | null {
 }
 
 /**
+ * 节点「看得见的那个框」。
+ *
+ * 有的物料根元素是铺满视口的外壳——弹窗的根就是整块蒙层。
+ * 直接量根元素的话，选中框和八个手柄会绕着整个画布画一圈，
+ * 既挡住正在编辑的内容，拖手柄改的也不是运营以为的那个尺寸。
+ * 这类物料在自己真正的框上打 data-nca-frame，量的时候优先用它。
+ */
+export function findFrame(nodeId: string): HTMLElement | null {
+  const el = findElement(nodeId);
+  if (!el) return null;
+  const frame = el.querySelector(':scope > [data-nca-frame]');
+  return frame instanceof HTMLElement ? frame : el;
+}
+
+/**
  * 计算拖拽落点。
  *
  * 规则：命中容器且指针在其中部 → 放进容器；否则按指针在命中节点的上半/下半

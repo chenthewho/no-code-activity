@@ -68,5 +68,11 @@ export function App() {
     );
   }
 
-  return <RendererSurface dsl={dsl} editing={preview.isPreview} />;
+  return (
+    <RendererSurface
+      dsl={dsl}
+      editing={preview.isPreview}
+      editingModalId={preview.editingModalId}
+    />
+  );
 }

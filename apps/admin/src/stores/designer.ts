@@ -11,6 +11,24 @@ import {
 import { createId, ROOT_NODE_ID } from '@nca/shared';
 import { create } from 'zustand';
 
+/**
+ * 选中节点所属的弹窗（含自身），没有则为 null。
+ *
+ * 「当前在编辑哪个弹窗」不另存一份状态，而是由选中态推导出来：
+ * 两份状态各存各的迟早会不同步——从节点树点进弹窗里的文字，
+ * 却因为开关还停在关闭上而什么都看不见。
+ */
+export function modalOfNode(craftJson: FinalDsl['craftJson'], nodeId: string | null): string | null {
+  let cursor = nodeId;
+  while (cursor) {
+    const node = craftJson[cursor];
+    if (!node) return null;
+    if (node.type.resolvedName === 'Modal') return cursor;
+    cursor = node.parent ?? null;
+  }
+  return null;
+}
+
 export interface DragPayload {
   materialName: string;
   defaultProps: Record<string, JsonValue>;

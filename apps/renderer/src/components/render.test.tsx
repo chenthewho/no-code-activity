@@ -168,11 +168,28 @@ describe('RendererSurface', () => {
     expect(screen.getByText('立即抽奖')).toBeInTheDocument();
   });
 
-  it('编辑态下弹窗平铺展示，便于在画布里直接编辑', async () => {
+  it('编辑态下弹窗默认不占位——平铺会盖住它下面的组件', async () => {
     render(<RendererSurface dsl={makeDsl()} editing />);
-    // 编辑态无需点击就能看到弹窗内容
+    await act(async () => {});
+    expect(screen.queryByText('恭喜中奖')).not.toBeInTheDocument();
+    // 被弹窗盖住过的按钮仍在
+    expect(screen.getByText('立即抽奖')).toBeInTheDocument();
+  });
+
+  it('编辑态下由设计器指定展开哪个弹窗', async () => {
+    render(<RendererSurface dsl={makeDsl()} editing editingModalId="modal_1" />);
     await act(async () => {});
     expect(screen.getByText('恭喜中奖')).toBeInTheDocument();
-    expect(screen.getByText(/编辑态平铺展示/)).toBeInTheDocument();
+  });
+
+  it('编辑态弹窗与线上同一套蒙层结构，不再是平铺形态', async () => {
+    const { container } = render(
+      <RendererSurface dsl={makeDsl()} editing editingModalId="modal_1" />,
+    );
+    await act(async () => {});
+    const modal = container.querySelector('.nca-modal');
+    expect(modal?.className).toContain('nca-modal--overlay');
+    // 选中框要框住面板而不是整块蒙层，靠的就是这个标记
+    expect(modal?.querySelector(':scope > [data-nca-frame]')).not.toBeNull();
   });
 });

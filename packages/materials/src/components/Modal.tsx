@@ -43,30 +43,30 @@ function Modal({ children, emit, editing, ...props }: MaterialComponentProps<Mod
     </button>
   );
 
-  // 编辑态平铺在画布里，运营才能直接选中并编辑弹窗内部的节点；
-  // 蒙层形态只在真实运行时出现。
-  if (editing) {
-    return (
-      <div className="nca-modal nca-modal--editing">
-        <div className="nca-modal__editing-label">弹窗（编辑态平铺展示）</div>
-        <div className="nca-modal__panel" style={panelStyle}>
-          {closeBtn}
-          {children}
-        </div>
-      </div>
-    );
-  }
-
+  /**
+   * 编辑态与运行时走同一套结构：弹窗浮在蒙层上，关掉时完全不占位。
+   *
+   * 早先编辑态是平铺进页面的，弹窗既撑开了页面高度，又盖住它下面的组件——
+   * 演示活动里中奖弹窗正好压在抽奖按钮上，点按钮点到的是弹窗里的文字。
+   * 显隐改由设计器的开关控制（编辑态下 visible 来自设计器而非动作）。
+   */
   if (!props.visible) return null;
 
   return (
     <div
-      className="nca-modal nca-modal--overlay"
+      className={`nca-modal nca-modal--overlay${editing ? ' nca-modal--editing' : ''}`}
       onClick={() => {
-        if (props.maskClosable !== false) emit?.('close');
+        // 编辑态点蒙层不关闭：开关在设计器手上，这里关了它会立刻再打开
+        if (!editing && props.maskClosable !== false) emit?.('close');
       }}
     >
-      <div className="nca-modal__panel" style={panelStyle} onClick={(e) => e.stopPropagation()}>
+      {/* 根元素是整块蒙层，选中框该框住的是这个面板，不是整个画布 */}
+      <div
+        className="nca-modal__panel"
+        data-nca-frame=""
+        style={panelStyle}
+        onClick={(e) => e.stopPropagation()}
+      >
         {closeBtn}
         {children}
       </div>
@@ -82,7 +82,7 @@ export const ModalMaterial = defineMaterial<ModalProps>({
     title: '弹窗',
     category: MATERIAL_CATEGORY.CONTAINER,
     icon: 'square',
-    description: '默认隐藏，由「打开弹窗」动作唤起；编辑态在画布中平铺展示',
+    description: '默认隐藏，由「打开弹窗」动作唤起；编辑时用画布右侧的开关展开',
     isContainer: true,
     defaultProps: {
       width: 600,

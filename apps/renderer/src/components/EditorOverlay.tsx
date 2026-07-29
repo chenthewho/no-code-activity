@@ -3,7 +3,13 @@ import { createPortal } from 'react-dom';
 import { ROOT_NODE_ID } from '@nca/shared';
 import { PREVIEW_MESSAGE } from '../bootstrap/preview-channel';
 import { useRuntime } from '../runtime/RuntimeProvider';
-import { computeDropTarget, findElement, nodeAtPoint, type DropTarget } from '../runtime/hit-test';
+import {
+  computeDropTarget,
+  findElement,
+  findFrame,
+  nodeAtPoint,
+  type DropTarget,
+} from '../runtime/hit-test';
 import {
   applyMove,
   applyResize,
@@ -61,7 +67,7 @@ function docBox(el: HTMLElement): Box {
  * 页面一滚就和组件脱开；改成滚动时重新测量又必然慢半帧、跟手时会抖。
  */
 export function EditorOverlay() {
-  const { dsl, editing } = useRuntime();
+  const { dsl, editing, openModals } = useRuntime();
   const [selected, setSelected] = useState<Box | null>(null);
   const [hovered, setHovered] = useState<Box | null>(null);
   const [drop, setDrop] = useState<DropTarget | null>(null);
@@ -81,9 +87,8 @@ export function EditorOverlay() {
   const pendingRef = useRef<{ nodeId: string; x: number; y: number } | null>(null);
 
   const boxOf = (nodeId: string): Box | null => {
-    const el = findElement(nodeId);
-    if (!el) return null;
-    return docBox(el);
+    const el = findFrame(nodeId);
+    return el ? docBox(el) : null;
   };
 
   /** 落点提示来自命中测试，那边给的是视口坐标，画之前换算到文档坐标 */
@@ -109,7 +114,7 @@ export function EditorOverlay() {
   /** 起手：告诉父窗口接管指针，之后坐标由它转发进来 */
   const beginTransform = useCallback(
     (nodeId: string, mode: TransformSession['mode'], x: number, y: number) => {
-      const el = findElement(nodeId);
+      const el = findFrame(nodeId);
       if (!el) return;
       const box = docBox(el);
       const offset = offsetInContainingBlock(el);
@@ -264,6 +269,23 @@ export function EditorOverlay() {
       document.body.style.userSelect = previous;
     };
   }, [editing]);
+
+  /**
+   * 编辑弹窗时锁住画布滚动。
+   *
+   * 弹窗是 fixed 的，滚动时它钉在视口上不动，而描边按文档坐标绘制会跟着页面走，
+   * 两者立刻错开。反正蒙层已经把下面的页面挡住了，此刻滚动也没有意义。
+   */
+  const modalOpen = editing && openModals.length > 0;
+  useEffect(() => {
+    if (!modalOpen) return;
+    const el = document.documentElement;
+    const previous = el.style.overflow;
+    el.style.overflow = 'hidden';
+    return () => {
+      el.style.overflow = previous;
+    };
+  }, [modalOpen]);
 
   /**
    * 画布内发起的重排，落点也由画布自己算。

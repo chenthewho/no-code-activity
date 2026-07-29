@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FinalDsl, JsonValue } from '@nca/dsl';
-import { useDesignerStore } from '../../stores/designer';
+import { modalOfNode, useDesignerStore } from '../../stores/designer';
+import { ModalSwitch } from './ModalSwitch';
 import { PREVIEW_MESSAGE, PreviewFrame, type PreviewFrameHandle } from './PreviewFrame';
 
 interface Props {
@@ -99,6 +100,15 @@ export function IframeCanvasSurface({
     frameRef.current?.post(PREVIEW_MESSAGE.EDITOR_SELECT, { nodeId: selectedId });
   }, [selectedId, dsl]);
 
+  /**
+   * 展开哪个弹窗由选中态推导：选中弹窗里的节点就展开它，选到页面上就收起。
+   * 否则从节点树点进弹窗内部的文字，会因为弹窗没展开而什么都看不到。
+   */
+  const activeModalId = modalOfNode(dsl.craftJson, selectedId);
+  useEffect(() => {
+    frameRef.current?.post(PREVIEW_MESSAGE.EDIT_MODAL, { modalId: activeModalId });
+  }, [activeModalId, dsl]);
+
   // 把画布的指令入口交给 store，设置器等面板才有办法请画布代为测量
   useEffect(() => {
     const bridge = useDesignerStore.getState().setCanvasBridge;
@@ -187,14 +197,26 @@ export function IframeCanvasSurface({
         userSelect: dragging || capturing ? 'none' : undefined,
       }}
     >
-      <PreviewFrame
-        ref={frameRef}
-        dsl={dsl}
-        width={designWidth}
-        height={canvasHeight}
-        interactive={interactive}
-        onMessage={handleMessage}
-      />
+      {/* 相对定位，好让弹窗开关贴着手机框右侧浮着 */}
+      <div style={{ position: 'relative' }}>
+        <PreviewFrame
+          ref={frameRef}
+          dsl={dsl}
+          width={designWidth}
+          height={canvasHeight}
+          interactive={interactive}
+          onMessage={handleMessage}
+        />
+        <ModalSwitch
+          dsl={dsl}
+          activeId={activeModalId}
+          // 开关即选中：展开就把弹窗选上，收起则清空选中，
+          // 不然收起后设置面板还停在看不见的弹窗子节点上
+          onToggle={(modalId) =>
+            modalId ? onSelectNode?.(modalId) : useDesignerStore.getState().select(null)
+          }
+        />
+      </div>
     </div>
   );
 }

@@ -61,19 +61,13 @@
   justify-content: center;
   background: rgba(0, 0, 0, 0.6);
 }
+/* 编辑态：蒙层调淡一点，好让运营看清被盖住的页面还在那儿 */
 .nca-modal--editing {
-  position: relative;
-  margin: 0.16rem 0;
-  padding: 0.28rem 0.12rem 0.12rem;
-  border: 1px dashed #b37feb;
-  border-radius: 0.08rem;
+  background: rgba(0, 0, 0, 0.45);
 }
-.nca-modal__editing-label {
-  position: absolute;
-  top: 0.04rem;
-  left: 0.08rem;
-  color: #b37feb;
-  font-size: 0.2rem;
+.nca-modal--editing .nca-modal__panel {
+  outline: 1px dashed #b37feb;
+  outline-offset: 0.04rem;
 }
 .nca-modal__panel {
   position: relative;

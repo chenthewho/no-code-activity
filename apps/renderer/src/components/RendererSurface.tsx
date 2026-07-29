@@ -8,12 +8,18 @@ import { EditorOverlay } from './EditorOverlay';
 export interface RendererSurfaceProps {
   dsl: FinalDsl;
   editing?: boolean;
+  /** 编辑态下由设计器指定要展开的弹窗 */
+  editingModalId?: string | null;
 }
 
 /** 活动页外壳：页面适配 + 画布 + 全局浮层 */
-export function RendererSurface({ dsl, editing = false }: RendererSurfaceProps) {
+export function RendererSurface({
+  dsl,
+  editing = false,
+  editingModalId = null,
+}: RendererSurfaceProps) {
   return (
-    <RuntimeProvider dsl={dsl} editing={editing}>
+    <RuntimeProvider dsl={dsl} editing={editing} editingModalId={editingModalId}>
       <PageFrame />
     </RuntimeProvider>
   );

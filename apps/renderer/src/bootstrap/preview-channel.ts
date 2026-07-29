@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * 设计器 ↔ 渲染器预览协议。
@@ -47,6 +47,14 @@ export const PREVIEW_MESSAGE = {
    * 元素会当场脱离文档流并收缩到内容宽，看起来就是「一选绝对定位页面就乱了」。
    */
   MEASURE_FREE: 'EDITOR_MEASURE_FREE',
+  /**
+   * D → R：当前正在编辑哪个弹窗（null 表示都不显示）。
+   *
+   * 弹窗原先在编辑态平铺进页面，既占位、又会盖住它下面的组件——
+   * 演示活动里中奖弹窗正好压住抽奖按钮，点按钮点到的是弹窗里的文字。
+   * 改成由设计器显式指定，弹窗按线上那套蒙层形态浮起来，不显示时不占位。
+   */
+  EDIT_MODAL: 'EDITOR_EDIT_MODAL',
   /** R → D：请求以流式重排的方式拖动已有节点 */
   DRAG_NODE: 'EDITOR_DRAG_NODE',
   /** R → D：画布内发起的重排已松手，请设计器落库 */
@@ -67,6 +75,8 @@ export interface PreviewEnvelope {
 
 export interface PreviewChannel {
   isPreview: boolean;
+  /** 设计器指定的、当前要展开编辑的弹窗节点 */
+  editingModalId: string | null;
   notifySelect: (nodeId: string) => void;
 }
 
@@ -80,6 +90,7 @@ export function usePreviewChannel(onDsl: (dsl: unknown) => void): PreviewChannel
   const onDslRef = useRef(onDsl);
   onDslRef.current = onDsl;
   const lastSeq = useRef(-1);
+  const [editingModalId, setEditingModalId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isPreview) return;
@@ -97,6 +108,12 @@ export function usePreviewChannel(onDsl: (dsl: unknown) => void): PreviewChannel
           lastSeq.current = data.seq;
         }
         onDslRef.current(data.payload);
+        return;
+      }
+
+      if (data.type === PREVIEW_MESSAGE.EDIT_MODAL) {
+        const id = (data.payload as { modalId?: string | null } | undefined)?.modalId;
+        setEditingModalId(typeof id === 'string' ? id : null);
       }
     };
 
@@ -114,5 +131,5 @@ export function usePreviewChannel(onDsl: (dsl: unknown) => void): PreviewChannel
     [isPreview],
   );
 
-  return { isPreview, notifySelect };
+  return { isPreview, editingModalId, notifySelect };
 }
