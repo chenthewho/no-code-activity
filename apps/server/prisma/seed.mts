@@ -18,6 +18,8 @@ const PERMISSION_META: Record<string, { name: string; module: string }> = {
   [PERMISSION.TEMPLATE_VIEW]: { name: '查看模板', module: 'template' },
   [PERMISSION.TEMPLATE_MANAGE]: { name: '管理模板', module: 'template' },
   [PERMISSION.MATERIAL_MANAGE]: { name: '管理物料', module: 'material' },
+  [PERMISSION.AI_USE]: { name: '使用 AI 助手', module: 'ai' },
+  [PERMISSION.AI_PUBLISH]: { name: 'AI 发起发布', module: 'ai' },
   [PERMISSION.SYSTEM_MANAGE]: { name: '系统管理', module: 'system' },
 };
 
@@ -35,6 +37,8 @@ const ROLES = [
       PERMISSION.ACTIVITY_EDIT,
       PERMISSION.ACTIVITY_PUBLISH,
       PERMISSION.TEMPLATE_VIEW,
+      PERMISSION.AI_USE,
+      PERMISSION.AI_PUBLISH,
     ] as string[],
   },
   {

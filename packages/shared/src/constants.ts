@@ -46,6 +46,13 @@ export const PERMISSION = {
   TEMPLATE_VIEW: 'template:view',
   TEMPLATE_MANAGE: 'template:manage',
   MATERIAL_MANAGE: 'material:manage',
+  /**
+   * AI 助手。与 activity:edit 分开，是为了能单独关掉 AI 而保留手工搭建——
+   * 模型会写草稿，出问题时需要一个不牵连正常编辑的开关。
+   */
+  AI_USE: 'ai:use',
+  /** AI 触发的发布必须单独授权：影响线上，且发布动作永远还要人工确认一次 */
+  AI_PUBLISH: 'ai:publish',
   SYSTEM_MANAGE: 'system:manage',
 } as const;
 
