@@ -17,10 +17,10 @@
 
 对应到本仓库，有两个入口：
 
-| 入口 | 形态 | 适用 |
-|---|---|---|
-| `/ai` 工作台 | 六张中断卡片串起的工作流，右侧实时预览 | 从零把一个活动搭起来 |
-| 设计器右侧 AI 面板 | 一问一答，出 diff 后人工点应用 | 已经搭好了，想改一处 |
+| 入口               | 形态                                   | 适用                 |
+| ------------------ | -------------------------------------- | -------------------- |
+| `/ai` 工作台       | 六张中断卡片串起的工作流，右侧实时预览 | 从零把一个活动搭起来 |
+| 设计器右侧 AI 面板 | 一问一答，出 diff 后人工点应用         | 已经搭好了，想改一处 |
 
 两者共用同一套补丁协议与校验，区别只在**要不要走流程**。
 
@@ -88,11 +88,11 @@ END
 
 ### 中断点的三种类型
 
-| kind | 语义 | 用在哪 |
-|---|---|---|
-| `approve` | 高风险操作前拦一道，人点确认或放弃 | 预览确认、发布 |
-| `edit` | AI 填好了，人过一遍并微调 | 基本信息、接口地址 |
-| `respond` | 信息不够，AI 得问一句 | 选模板、选组件 |
+| kind      | 语义                               | 用在哪             |
+| --------- | ---------------------------------- | ------------------ |
+| `approve` | 高风险操作前拦一道，人点确认或放弃 | 预览确认、发布     |
+| `edit`    | AI 填好了，人过一遍并微调          | 基本信息、接口地址 |
+| `respond` | 信息不够，AI 得问一句              | 选模板、选组件     |
 
 每张卡片都带 `why` / `done` / `missing` 三个字段，分别回答「为什么需要你」
 「AI 已经做了什么」「还缺什么」。这不是装饰——语焉不详的确认框和假进度条一样
@@ -138,15 +138,27 @@ END
 新建节点时模型起一个临时句柄，后续补丁用同一个句柄指向它，真实 id 由
 `applyPatches` 生成：
 
-```jsonc
+```json
 [
-  { "op": "addNode", "ref": "@win", "material": "Modal",
-    "position": { "mode": "appendTo", "target": "ROOT" } },
-  { "op": "addNode", "ref": "@lot", "material": "Lottery",
-    "position": { "mode": "before", "target": "@win" } },
-  { "op": "bindEvent", "target": "@lot", "trigger": "onCustom",
+  {
+    "op": "addNode",
+    "ref": "@win",
+    "material": "Modal",
+    "position": { "mode": "appendTo", "target": "ROOT" }
+  },
+  {
+    "op": "addNode",
+    "ref": "@lot",
+    "material": "Lottery",
+    "position": { "mode": "before", "target": "@win" }
+  },
+  {
+    "op": "bindEvent",
+    "target": "@lot",
+    "trigger": "onCustom",
     "customEvent": "finish",
-    "actions": [{ "type": "modal.open", "modalId": "@win" }] }
+    "actions": [{ "type": "modal.open", "modalId": "@win" }]
+  }
 ]
 ```
 
@@ -183,13 +195,13 @@ END
 `actionSchema` 派生**（仓库的单一来源约定，双写必然漂移）；这张表只登记
 **平台级操作**，每项声明三件事：
 
-| 能力 | 权限 | 确认策略 |
-|---|---|---|
-| `read_page` | — | `none`（读操作直接执行） |
-| `list_templates` | — | `none` |
-| `apply_patches` | `ai:use` | `approve`（出卡片） |
-| `save_draft` | `ai:use` | `approve` |
-| `publish_activity` | `ai:publish` | `human`（必须人工） |
+| 能力               | 权限         | 确认策略                 |
+| ------------------ | ------------ | ------------------------ |
+| `read_page`        | —            | `none`（读操作直接执行） |
+| `list_templates`   | —            | `none`                   |
+| `apply_patches`    | `ai:use`     | `approve`（出卡片）      |
+| `save_draft`       | `ai:use`     | `approve`                |
+| `publish_activity` | `ai:publish` | `human`（必须人工）      |
 
 **中断策略由这张表派生**，而不是散落在各节点的 `if` 里。工具集也按调用方权限
 裁剪——无权发布的人，模型那边压根看不到发布这个工具。
@@ -230,12 +242,12 @@ token，模型真正需要的是「有哪些节点、什么类型、谁是谁的
 
 ### 模型与参数
 
-| 项 | 值 | 说明 |
-|---|---|---|
-| 模型 | `claude-opus-5` | $5 / $25 per MTok，1M 上下文 |
-| `max_tokens` | 64000 | **必须流式**，非流式会先撞 SDK 的 HTTP 超时 |
-| `thinking` | `adaptive` + `display: summarized` | 默认 `omitted` 的话前端只看到一段长空白 |
-| `effort` | `high`（可配） | 编排类任务起步 `high`，可往下 sweep |
+| 项           | 值                                 | 说明                                        |
+| ------------ | ---------------------------------- | ------------------------------------------- |
+| 模型         | `claude-opus-5`                    | $5 / $25 per MTok，1M 上下文                |
+| `max_tokens` | 64000                              | **必须流式**，非流式会先撞 SDK 的 HTTP 超时 |
+| `thinking`   | `adaptive` + `display: summarized` | 默认 `omitted` 的话前端只看到一段长空白     |
+| `effort`     | `high`（可配）                     | 编排类任务起步 `high`，可往下 sweep         |
 
 不发 `temperature` / `top_p`——Opus 5 已移除，发了直接 400。
 读 `content` 前**必须先判 `stop_reason === 'refusal'`**，拒答时 content 可能是空的。
@@ -276,12 +288,12 @@ LangGraph 官方只提供 SQLite / Postgres / Redis 三种实现，本项目是 
 **驱动与恢复共用一个接口**：`POST /ai/runs/:id/stream`，带 `resume` 就是从断点
 续，不带就是从头跑。对 LangGraph 来说本来就是同一件事。
 
-| 接口 | 用途 |
-|---|---|
-| `POST /ai/runs` | 创建运行，返回 runId |
-| `GET /ai/runs/:id` | 运行详情，**断线重连靠它补齐前情**（不依赖 SSE 重放） |
-| `POST /ai/runs/:id/stream` | 执行 / 恢复，SSE |
-| `POST /ai/edit/stream` | 设计器局部编辑，SSE |
+| 接口                       | 用途                                                  |
+| -------------------------- | ----------------------------------------------------- |
+| `POST /ai/runs`            | 创建运行，返回 runId                                  |
+| `GET /ai/runs/:id`         | 运行详情，**断线重连靠它补齐前情**（不依赖 SSE 重放） |
+| `POST /ai/runs/:id/stream` | 执行 / 恢复，SSE                                      |
+| `POST /ai/edit/stream`     | 设计器局部编辑，SSE                                   |
 
 事件类型见 `packages/shared/src/ai.ts` 的 `AiEvent`：
 `status` / `thinking` / `text` / `patch` / `dsl` / `interrupt` / `done` / `error`。
@@ -303,14 +315,14 @@ LangGraph 官方只提供 SQLite / Postgres / Redis 三种实现，本项目是 
 
 ## 10. 怎么扩展
 
-| 想加什么 | 改哪里 | 要不要改 prompt |
-|---|---|---|
-| 新物料 | `packages/materials` + 重跑 seed | **不用**，清单从 material 表派生 |
-| 新补丁算子 | `packages/dsl/src/patch.ts` 的联合 + `applyPatches` | **不用**，工具 schema 从 zod 派生 |
-| 新平台能力 | `capability/registry.ts` 加一项 | 不用 |
-| 新条件注入规则 | `workflow/injection.ts` 的 `INJECTION_RULES` | 不用 |
-| 新中断点 | `graph.ts` 加一对「准备节点 + 确认节点」 | 不用 |
-| 新硬约束 | `llm/prompt.ts` 的 `HARD_RULES` | 要 |
+| 想加什么       | 改哪里                                              | 要不要改 prompt                   |
+| -------------- | --------------------------------------------------- | --------------------------------- |
+| 新物料         | `packages/materials` + 重跑 seed                    | **不用**，清单从 material 表派生  |
+| 新补丁算子     | `packages/dsl/src/patch.ts` 的联合 + `applyPatches` | **不用**，工具 schema 从 zod 派生 |
+| 新平台能力     | `capability/registry.ts` 加一项                     | 不用                              |
+| 新条件注入规则 | `workflow/injection.ts` 的 `INJECTION_RULES`        | 不用                              |
+| 新中断点       | `graph.ts` 加一对「准备节点 + 确认节点」            | 不用                              |
+| 新硬约束       | `llm/prompt.ts` 的 `HARD_RULES`                     | 要                                |
 
 ---
 
