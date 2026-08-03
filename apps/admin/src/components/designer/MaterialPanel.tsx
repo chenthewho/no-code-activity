@@ -6,12 +6,15 @@ import {
   ClockCircleOutlined,
   DesktopOutlined,
   FontSizeOutlined,
+  GiftOutlined,
+  IdcardOutlined,
   MobileOutlined,
   PictureOutlined,
   PlaySquareOutlined,
   SearchOutlined,
   SelectOutlined,
   TrophyOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 import { MATERIAL_CATEGORY, type MaterialCategory } from '@nca/shared';
@@ -35,6 +38,9 @@ const ICONS: Record<string, ReactNode> = {
   Swiper: <PlaySquareOutlined />,
   Countdown: <ClockCircleOutlined />,
   RankList: <TrophyOutlined />,
+  Lottery: <GiftOutlined />,
+  Login: <UserOutlined />,
+  BindRole: <IdcardOutlined />,
 };
 
 export function MaterialPanel({ metas }: { metas: MaterialMeta[] }) {

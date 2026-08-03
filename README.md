@@ -51,7 +51,7 @@ pnpm dev                     # 或分别启动三个服务
 
 ```bash
 pnpm build          # 全量构建
-pnpm test           # 全量测试（97 项）
+pnpm test           # 全量测试（113 项）
 pnpm typecheck
 pnpm lint
 ```
@@ -60,7 +60,9 @@ pnpm lint
 
 - **DSL 协议**：FinalDSL / 物料协议 / 动作协议 / manifest；校验分两级——
   草稿容忍「还没填完」，发布严格拦截；含引用完整性检查与版本迁移链
-- **物料库**：Page、Container、Text、Image、Button、Modal、Countdown、Swiper、RankList
+- **物料库**：Page、Container、Text、Image、Button、Modal、Countdown、Swiper、RankList、
+  Lottery（九宫格/转盘抽奖）、Login（登录入口）、BindRole（区服角色绑定）；
+  三个活动组件只管交互与展示，中奖结果、登录态、绑定关系一律由绑定的状态/数据源喂进来
 - **后端**：RBAC、活动 CRUD、草稿自动保存、发布与回滚、模板中心、物料注册表、
   资源上传、C 端 runtime 接口
 - **渲染器**：递归渲染、condition/loop 容器、受限表达式求值（不用 eval）、

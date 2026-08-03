@@ -11,6 +11,9 @@ import { ModalMaterial } from './components/Modal';
 import { CountdownMaterial } from './components/Countdown';
 import { SwiperMaterial } from './components/Swiper';
 import { RankListMaterial } from './components/RankList';
+import { LotteryMaterial } from './components/Lottery';
+import { LoginMaterial } from './components/Login';
+import { BindRoleMaterial } from './components/BindRole';
 
 export * from './types';
 export * from './utils/style';
@@ -25,6 +28,9 @@ export { ModalMaterial } from './components/Modal';
 export { CountdownMaterial } from './components/Countdown';
 export { SwiperMaterial } from './components/Swiper';
 export { RankListMaterial } from './components/RankList';
+export { LotteryMaterial } from './components/Lottery';
+export { LoginMaterial } from './components/Login';
+export { BindRoleMaterial } from './components/BindRole';
 
 export type { PageProps } from './components/Page';
 export type { ContainerProps } from './components/Container';
@@ -35,6 +41,9 @@ export type { ModalProps } from './components/Modal';
 export type { CountdownProps } from './components/Countdown';
 export type { SwiperProps, SwiperItem } from './components/Swiper';
 export type { RankListProps } from './components/RankList';
+export type { LotteryProps } from './components/Lottery';
+export type { LoginProps } from './components/Login';
+export type { BindRoleProps } from './components/BindRole';
 
 /**
  * 物料总表 —— 全平台唯一的物料来源。
@@ -52,6 +61,9 @@ export const materials: MaterialDefinition<any>[] = [
   CountdownMaterial,
   SwiperMaterial,
   RankListMaterial,
+  LotteryMaterial,
+  LoginMaterial,
+  BindRoleMaterial,
 ];
 
 export const materialMap: Record<string, MaterialDefinition> = Object.fromEntries(

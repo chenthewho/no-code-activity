@@ -23,7 +23,8 @@
 .nca-image--empty,
 .nca-swiper--empty,
 .nca-countdown--empty,
-.nca-rank--empty {
+.nca-rank--empty,
+.nca-lottery--empty {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -167,4 +168,220 @@
 .nca-rank__score {
   flex: 0 0 auto;
   font-weight: bold;
+}
+
+/* 抽奖：九宫格与转盘共用奖品格与按钮的样式，只有排布方式不同 */
+.nca-lottery--grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  box-sizing: border-box;
+}
+.nca-lottery__cell,
+.nca-lottery__center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.06rem;
+  /* 正方形格子，宽度随容器走，高度自己跟上 */
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  padding: 0.06rem;
+  overflow: hidden;
+  transition: background-color 0.08s linear;
+}
+.nca-lottery__cell--active {
+  box-shadow: inset 0 0 0 2px rgba(255, 122, 69, 0.9);
+}
+.nca-lottery__img {
+  width: 60%;
+  height: auto;
+  max-height: 60%;
+  object-fit: contain;
+}
+.nca-lottery__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+.nca-lottery__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  font-weight: bold;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+.nca-lottery__btn:disabled {
+  cursor: not-allowed;
+}
+.nca-lottery__btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.nca-lottery--wheel {
+  position: relative;
+  aspect-ratio: 1;
+  box-sizing: border-box;
+}
+.nca-lottery__wheel {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+}
+/*
+ * 扇区标签绕圆心排布：底边正好落在圆心上，以它为轴转到各自的角度。
+ * 宽度写死并用 left 居中，而不是 left:50% + translateX(-50%)——
+ * 位移会跟着旋转一起进矩阵，转过之后就不再是「向左半个身位」了。
+ */
+.nca-lottery__sector {
+  position: absolute;
+  left: 30%;
+  top: 0;
+  width: 40%;
+  height: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.04rem;
+  padding-top: 0.16rem;
+  box-sizing: border-box;
+  transform-origin: bottom center;
+}
+.nca-lottery__btn--pointer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28%;
+  height: 28%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+}
+.nca-lottery__btn--pointer:active:not(:disabled) {
+  transform: translate(-50%, -50%) scale(0.96);
+}
+/* 指针三角，跟着按钮文字色走 */
+.nca-lottery__btn--pointer::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 0.16rem solid transparent;
+  border-bottom-color: currentColor;
+}
+
+.nca-login {
+  display: flex;
+  align-items: center;
+  gap: 0.16rem;
+  box-sizing: border-box;
+}
+.nca-login__avatar {
+  flex: 0 0 auto;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #eee;
+}
+.nca-login__avatar--empty {
+  display: inline-block;
+  background: #e5e5e5;
+}
+.nca-login__name,
+.nca-login__tip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nca-login__btn {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.3rem;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+.nca-login__logout {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: underline;
+  opacity: 0.7;
+}
+
+.nca-bind-role {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  box-sizing: border-box;
+}
+.nca-bind-role--bound {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.12rem;
+}
+.nca-bind-role__field {
+  display: flex;
+  align-items: center;
+  gap: 0.12rem;
+}
+.nca-bind-role__label {
+  flex: 0 0 auto;
+}
+.nca-bind-role__select {
+  flex: 1;
+  min-width: 0;
+  height: 0.72rem;
+  padding: 0 0.16rem;
+  border: none;
+  outline: none;
+  /* 各端原生下拉的默认样式差异很大，统一抹平再自己上色 */
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: none;
+}
+.nca-bind-role__select:disabled {
+  opacity: 0.6;
+}
+.nca-bind-role__tip {
+  opacity: 0.7;
+}
+.nca-bind-role__name {
+  font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nca-bind-role__switch {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: underline;
+  opacity: 0.7;
+}
+.nca-bind-role__submit {
+  height: 0.8rem;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+.nca-bind-role__submit:disabled {
+  cursor: not-allowed;
 }
