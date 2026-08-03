@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { DslAction, FinalDsl } from '@nca/dsl';
 import type { ExpressionContext } from './expression';
-import { resolveCondition } from './props-parser';
+import { resolveCondition, resolveValue } from './props-parser';
 import {
   fetchDataSource,
   initDataSourceState,
@@ -113,12 +113,31 @@ export function RuntimeProvider({
     setOpenModals((prev) => (modalId ? prev.filter((id) => id !== modalId) : prev.slice(0, -1)));
   }, []);
 
+  /**
+   * 状态写入必须同步落到 ctxRef：一个事件里的多个动作是串行 await 的，
+   * 而 React 不会在两个 await 之间重渲染。只调 setState 的话，
+   * 紧随其后的动作仍会读到这次写入之前的值。
+   */
+  const commitPageState = useCallback((key: string, value: unknown) => {
+    ctxRef.current = {
+      ...ctxRef.current,
+      pageState: { ...ctxRef.current.pageState, [key]: value },
+    };
+    setPageState((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
   const refreshDataSource = useCallback(
     async (dataSourceId: string) => {
       const ds = dsl.dataSources.find((d) => d.id === dataSourceId);
       if (!ds) return;
       setDataSources((prev) => ({ ...prev, [ds.id]: { ...prev[ds.id]!, loading: true } }));
       const next = await fetchDataSource(ds, buildContext());
+      // 同 commitPageState：「刷新数据源 → 把结果写进 state」是标准编排，
+      // 后一个动作必须能立刻读到这次的返回值
+      ctxRef.current = {
+        ...ctxRef.current,
+        dataSources: { ...ctxRef.current.dataSources, [ds.id]: next },
+      };
       setDataSources((prev) => ({ ...prev, [ds.id]: next }));
     },
     [dsl.dataSources, buildContext],
@@ -126,7 +145,8 @@ export function RuntimeProvider({
 
   const runAction = useCallback(
     async (action: DslAction, scope?: Record<string, unknown>): Promise<void> => {
-      if (!resolveCondition(action.condition, buildContext(scope))) return;
+      const ctx = buildContext(scope);
+      if (!resolveCondition(action.condition, ctx)) return;
 
       switch (action.type) {
         case 'navigate':
@@ -150,7 +170,9 @@ export function RuntimeProvider({
           return;
 
         case 'state.set':
-          setPageState((prev) => ({ ...prev, [action.key]: action.value }));
+          // value 允许写 {{ }}：不求值的话，「把接口返回的中奖下标写进 state」
+          // 这类最基本的编排根本无法表达，只会存进一个字面量字符串
+          commitPageState(action.key, resolveValue(action.value, ctx));
           return;
 
         case 'dataSource.refresh':
@@ -193,7 +215,7 @@ export function RuntimeProvider({
           return;
       }
     },
-    [buildContext, closeModal, editing, host, pushToast, refreshDataSource],
+    [buildContext, closeModal, commitPageState, editing, host, pushToast, refreshDataSource],
   );
 
   const emit = useCallback(

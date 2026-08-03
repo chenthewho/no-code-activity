@@ -7,11 +7,16 @@ import { RendererSurface } from './RendererSurface';
  * 活动组件的验收点都在「物料 → 事件 → 动作 → 状态 → 回到物料」这条闭环上，
  * 所以一律跑整套渲染器，而不是单独 mount 物料。
  */
-function makeDsl(nodes: Record<string, unknown>, events: unknown[], initialState = {}): FinalDsl {
+function makeDsl(
+  nodes: Record<string, unknown>,
+  events: unknown[],
+  initialState = {},
+  dataSources: unknown[] = [],
+): FinalDsl {
   return finalDslSchema.parse({
     schemaVersion: '1.0.0',
     meta: { activityId: 'act_test', title: '活动组件' },
-    dataSources: [],
+    dataSources,
     craftJson: {
       ROOT: {
         type: { resolvedName: 'Page' },
@@ -183,49 +188,221 @@ describe('抽奖', () => {
   });
 });
 
+/**
+ * 这是 AI 会生成的那条标准编排，也是线上真实形态：
+ * 中奖结果来自接口，而不是像上面几个用例那样写死常量。
+ * 它同时压住两个曾经的缺陷——`state.set` 不求值、以及同一事件里
+ * 后一个动作读不到前一个动作刚写进去的值。
+ */
+describe('抽奖闭环（接口驱动）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function drawDrivenDsl() {
+    return makeDsl(
+      {
+        lot_1: {
+          type: { resolvedName: 'Lottery' },
+          props: {
+            prizes: PRIZES,
+            resultIndex: '{{ state.prizeIndex }}',
+            rounds: 1,
+            duration: 800,
+          },
+        },
+        // 带前缀：奖品名同时出现在九宫格的格子里，光断言名字会命中两处
+        probe_1: probe('开奖结果：{{ state.wonName }}'),
+      },
+      [
+        {
+          id: 'e_draw',
+          nodeId: 'lot_1',
+          trigger: 'onCustom',
+          customEvent: 'draw',
+          actions: [
+            // 先归位，否则第二次点击会立刻停在上一轮结果
+            { type: 'state.set', key: 'prizeIndex', value: -1 },
+            { type: 'dataSource.refresh', dataSourceId: 'ds_draw' },
+            { type: 'state.set', key: 'prizeIndex', value: '{{ dataSource.ds_draw.index }}' },
+          ],
+        },
+        {
+          id: 'e_finish',
+          nodeId: 'lot_1',
+          trigger: 'onCustom',
+          customEvent: 'finish',
+          actions: [{ type: 'state.set', key: 'wonName', value: '{{ payload.prize.name }}' }],
+        },
+      ],
+      { prizeIndex: -1, wonName: '未开奖' },
+      [
+        {
+          id: 'ds_draw',
+          name: '抽奖接口',
+          type: 'http',
+          url: '/api/draw',
+          method: 'POST',
+          autoLoad: false,
+        },
+      ],
+    );
+  }
+
+  it('接口返回的中奖序号能写进 state，并驱动物料落停到对应奖品', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ index: 5 }) }),
+    );
+
+    render(<RendererSurface dsl={drawDrivenDsl()} />);
+    expect(screen.getByText('开奖结果：未开奖')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '抽奖' }));
+    // 让 draw 的三个动作串行跑完（含一次真实 await 的接口请求）
+    await act(async () => {});
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    // 6 号奖 = index 5，说明表达式求了值、且第三个动作读到了刚刷新的数据源
+    expect(screen.getByText('开奖结果：6 号奖')).toBeInTheDocument();
+  });
+
+  it('连抽两次都能停在各自的结果上，不会卡在上一轮', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ index: 1 }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ index: 7 }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<RendererSurface dsl={drawDrivenDsl()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '抽奖' }));
+    await act(async () => {});
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getByText('开奖结果：2 号奖')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '抽奖' }));
+    await act(async () => {});
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getByText('开奖结果：8 号奖')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('登录', () => {
-  const loginDsl = () =>
+  const loginDsl = (props: Record<string, unknown> = {}) =>
     makeDsl(
       {
         login_1: {
           type: { resolvedName: 'Login' },
-          props: {
-            logged: '{{ state.userId }}',
-            nickname: '{{ state.nickname }}',
-            greeting: 'Hi, ',
-          },
+          props: { greeting: 'Hi, ', ...props },
         },
+        probe_1: probe('{{ state.submitted ? "已提交" : "未提交" }}'),
       },
       [
         {
-          id: 'e_login',
+          id: 'e_submit',
           nodeId: 'login_1',
           trigger: 'onCustom',
-          customEvent: 'login',
-          actions: [
-            { type: 'state.set', key: 'userId', value: 'u_1' },
-            { type: 'state.set', key: 'nickname', value: '阿离' },
-          ],
+          customEvent: 'submit',
+          actions: [{ type: 'state.set', key: 'submitted', value: true }],
         },
       ],
       {},
     );
 
-  it('登录态为空时展示登录入口', () => {
+  it('未登录时展示登录入口，弹窗默认不出现', () => {
     render(<RendererSurface dsl={loginDsl()} />);
     expect(screen.getByText('登录后参与活动')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '登录' })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('请输入账号')).not.toBeInTheDocument();
   });
 
-  it('点击登录抛出 login 事件，登录态写回后换成昵称', async () => {
+  it('点击登录弹出账号密码框', () => {
     render(<RendererSurface dsl={loginDsl()} />);
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
 
-    await waitFor(() => expect(screen.getByText('Hi, 阿离')).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: '登录' })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('请输入账号')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('请输入密码')).toHaveAttribute('type', 'password');
   });
 
-  it('登录态是未求值的空串时仍算未登录', () => {
+  it('账号密码没填全就提交，只提示不关窗也不抛 submit', async () => {
+    render(<RendererSurface dsl={loginDsl()} />);
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    fireEvent.change(screen.getByPlaceholderText('请输入账号'), { target: { value: 'player' } });
+    // 密码留空。入口与弹窗里的提交按钮同名，取后者
+    fireEvent.click(screen.getAllByRole('button', { name: '登录' }).at(-1)!);
+
+    expect(screen.getByText('请输入账号和密码')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('请输入账号')).toBeInTheDocument();
+    await act(async () => {});
+    expect(screen.getByText('未提交')).toBeInTheDocument();
+  });
+
+  it('填完提交后抛 submit、关窗，并按账号进入已登录态', async () => {
+    render(<RendererSurface dsl={loginDsl()} />);
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    fireEvent.change(screen.getByPlaceholderText('请输入账号'), { target: { value: 'player' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入密码'), { target: { value: 'pwd123' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '登录' }).at(-1)!);
+
+    await waitFor(() => expect(screen.getByText('已提交')).toBeInTheDocument());
+    expect(screen.queryByPlaceholderText('请输入账号')).not.toBeInTheDocument();
+    expect(screen.getByText('Hi, player')).toBeInTheDocument();
+  });
+
+  it('退出后回到未登录态', async () => {
+    render(<RendererSurface dsl={loginDsl()} />);
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    fireEvent.change(screen.getByPlaceholderText('请输入账号'), { target: { value: 'player' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入密码'), { target: { value: 'pwd123' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '登录' }).at(-1)!);
+    await waitFor(() => expect(screen.getByText('Hi, player')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: '退出' }));
+    expect(screen.getByText('登录后参与活动')).toBeInTheDocument();
+  });
+
+  it('关掉本地登录态后只认绑定值，提交不会自己登进去', async () => {
+    render(<RendererSurface dsl={loginDsl({ localSession: false })} />);
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    fireEvent.change(screen.getByPlaceholderText('请输入账号'), { target: { value: 'player' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入密码'), { target: { value: 'pwd123' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '登录' }).at(-1)!);
+
+    await waitFor(() => expect(screen.getByText('已提交')).toBeInTheDocument());
+    expect(screen.getByText('登录后参与活动')).toBeInTheDocument();
+  });
+
+  it('形态选「交给登录动作」时不弹窗，只抛 login 事件', async () => {
+    const dsl = loginDsl({ mode: 'action' });
+    dsl.events = [
+      {
+        id: 'e_login',
+        nodeId: 'login_1',
+        trigger: 'onCustom',
+        customEvent: 'login',
+        actions: [{ type: 'state.set', key: 'submitted', value: true }],
+      },
+    ];
+    render(<RendererSurface dsl={dsl} />);
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+
+    await waitFor(() => expect(screen.getByText('已提交')).toBeInTheDocument());
+    expect(screen.queryByPlaceholderText('请输入账号')).not.toBeInTheDocument();
+  });
+
+  it('登录态绑定的是未求值的空串时仍算未登录', () => {
     const dsl = loginDsl();
     (dsl.craftJson.login_1 as CraftNode).props.logged = '';
     render(<RendererSurface dsl={dsl} />);
@@ -244,7 +421,10 @@ describe('绑定角色', () => {
               { id: 's1', name: '艾欧尼亚' },
               { id: 's2', name: '祖安' },
             ],
-            roles: [{ id: 'r1', name: '影流之主' }],
+            roles: [
+              { id: 'r1', name: '影流之主', serverId: 's1' },
+              { id: 'r2', name: '德玛西亚之力', serverId: 's2' },
+            ],
             ...props,
           },
         },
@@ -258,70 +438,95 @@ describe('绑定角色', () => {
           customEvent: 'bind',
           actions: [{ type: 'state.set', key: 'bound', value: true }],
         },
-        {
-          id: 'e_server',
-          nodeId: 'bind_1',
-          trigger: 'onCustom',
-          customEvent: 'serverChange',
-          actions: [{ type: 'state.set', key: 'picked', value: true }],
-        },
       ],
       {},
     );
 
-  it('渲染区服与角色两级选择', () => {
+  const selects = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('select')) as HTMLSelectElement[];
+
+  it('未绑定时只有一个入口按钮，下拉在弹窗里', () => {
     const { container } = render(<RendererSurface dsl={bindDsl()} />);
-    const selects = container.querySelectorAll('select');
-    expect(selects).toHaveLength(2);
-    expect(screen.getByText('艾欧尼亚')).toBeInTheDocument();
-    expect(screen.getByText('影流之主')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '绑定角色' })).toBeInTheDocument();
+    expect(selects(container)).toHaveLength(0);
   });
 
-  it('没选角色时提交按钮点不动', async () => {
-    render(<RendererSurface dsl={bindDsl()} />);
-    fireEvent.click(screen.getByRole('button', { name: '确认绑定' }));
-    await act(async () => {});
-    expect(screen.getByText('未绑定')).toBeInTheDocument();
+  it('点入口弹出弹窗，含区服与角色两个下拉', () => {
+    const { container } = render(<RendererSurface dsl={bindDsl()} />);
+    fireEvent.click(screen.getByRole('button', { name: '绑定角色' }));
+    expect(selects(container)).toHaveLength(2);
   });
 
-  it('选完区服和角色后提交，抛出 bind 事件', async () => {
+  it('角色按所属区服过滤，没选区服时选不了角色', () => {
     const { container } = render(<RendererSurface dsl={bindDsl()} />);
-    const [serverSelect, roleSelect] = Array.from(container.querySelectorAll('select'));
+    fireEvent.click(screen.getByRole('button', { name: '绑定角色' }));
+    const [serverSelect, roleSelect] = selects(container);
 
+    expect(roleSelect!.disabled).toBe(true);
+    expect(screen.getByText('请先选择区服')).toBeInTheDocument();
+
+    fireEvent.change(serverSelect!, { target: { value: 's1' } });
+    const labels = Array.from(roleSelect!.options).map((o) => o.text);
+    expect(labels).toContain('影流之主');
+    expect(labels).not.toContain('德玛西亚之力');
+  });
+
+  it('换区服会清掉已选角色，避免把别区的角色提交上去', () => {
+    const { container } = render(<RendererSurface dsl={bindDsl()} />);
+    fireEvent.click(screen.getByRole('button', { name: '绑定角色' }));
+    const [serverSelect, roleSelect] = selects(container);
+
+    fireEvent.change(serverSelect!, { target: { value: 's1' } });
+    fireEvent.change(roleSelect!, { target: { value: 'r1' } });
+    expect(roleSelect!.value).toBe('r1');
+
+    fireEvent.change(serverSelect!, { target: { value: 's2' } });
+    expect(roleSelect!.value).toBe('');
+  });
+
+  it('确认绑定后抛 bind 事件、关窗，并展示区服与角色', async () => {
+    const { container } = render(<RendererSurface dsl={bindDsl()} />);
+    fireEvent.click(screen.getByRole('button', { name: '绑定角色' }));
+    const [serverSelect, roleSelect] = selects(container);
     fireEvent.change(serverSelect!, { target: { value: 's1' } });
     fireEvent.change(roleSelect!, { target: { value: 'r1' } });
     fireEvent.click(screen.getByRole('button', { name: '确认绑定' }));
 
     await waitFor(() => expect(screen.getByText('已提交绑定')).toBeInTheDocument());
+    expect(selects(container)).toHaveLength(0);
+    expect(screen.getByText('艾欧尼亚 · 影流之主')).toBeInTheDocument();
   });
 
-  it('换区服会清掉已选角色，避免把别区的角色提交上去', () => {
+  it('绑定后可以换绑，弹窗会再开一次', async () => {
     const { container } = render(<RendererSurface dsl={bindDsl()} />);
-    const [serverSelect, roleSelect] = Array.from(container.querySelectorAll('select'));
-
+    fireEvent.click(screen.getByRole('button', { name: '绑定角色' }));
+    let [serverSelect, roleSelect] = selects(container);
     fireEvent.change(serverSelect!, { target: { value: 's1' } });
     fireEvent.change(roleSelect!, { target: { value: 'r1' } });
-    expect((roleSelect as HTMLSelectElement).value).toBe('r1');
+    fireEvent.click(screen.getByRole('button', { name: '确认绑定' }));
+    await waitFor(() => expect(screen.getByText('艾欧尼亚 · 影流之主')).toBeInTheDocument());
 
+    fireEvent.click(screen.getByRole('button', { name: '换绑' }));
+    [serverSelect, roleSelect] = selects(container);
     fireEvent.change(serverSelect!, { target: { value: 's2' } });
-    expect((roleSelect as HTMLSelectElement).value).toBe('');
+    fireEvent.change(roleSelect!, { target: { value: 'r2' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认绑定' }));
+
+    await waitFor(() => expect(screen.getByText('祖安 · 德玛西亚之力')).toBeInTheDocument());
   });
 
-  it('角色列表为空时禁用角色选择并给出提示', () => {
-    const { container } = render(<RendererSurface dsl={bindDsl({ roles: [] })} />);
-    const [, roleSelect] = Array.from(container.querySelectorAll('select'));
-    expect((roleSelect as HTMLSelectElement).disabled).toBe(true);
-    expect(screen.getByText('请先选择区服')).toBeInTheDocument();
+  it('没选角色时确认按钮点不动', async () => {
+    render(<RendererSurface dsl={bindDsl()} />);
+    fireEvent.click(screen.getByRole('button', { name: '绑定角色' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认绑定' }));
+
+    await act(async () => {});
+    expect(screen.getByText('未绑定')).toBeInTheDocument();
   });
 
-  it('已绑定态直接展示角色，点切换才回到选择界面', () => {
-    const { container } = render(
-      <RendererSurface dsl={bindDsl({ boundRole: '影流之主', boundServer: '艾欧尼亚' })} />,
-    );
-    expect(container.querySelectorAll('select')).toHaveLength(0);
-    expect(screen.getByText('艾欧尼亚 · 影流之主')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '切换角色' }));
-    expect(container.querySelectorAll('select')).toHaveLength(2);
+  it('外部绑定的已绑定角色直接展示，无需本地选过', () => {
+    render(<RendererSurface dsl={bindDsl({ boundRole: '疾风剑豪', boundServer: '黑色玫瑰' })} />);
+    expect(screen.getByText('黑色玫瑰 · 疾风剑豪')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '换绑' })).toBeInTheDocument();
   });
 });
