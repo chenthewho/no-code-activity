@@ -39,6 +39,20 @@ const envSchema = z.object({
    * 这是渲染器应用的访问地址——本地开发时两者根本不在同一个端口上。
    */
   ACTIVITY_BASE_URL: z.string().default('http://localhost:5180'),
+
+  /**
+   * AI 助手。key 一律 optional——没配 key 的本地环境要能照常起服务、跑测试，
+   * 只是调 AI 接口时才报错。这里写成必填的话，所有不碰 AI 的人都会被卡在启动。
+   */
+  ANTHROPIC_API_KEY: z.string().optional(),
+  /** 走代理/网关时改这里，直连官方留空 */
+  ANTHROPIC_BASE_URL: z.string().optional(),
+  AI_MODEL: z.string().default('claude-opus-5'),
+  /** 流式输出，给足余量；编排类任务的思考与工具调用都算在里面 */
+  AI_MAX_TOKENS: z.coerce.number().int().positive().default(64000),
+  AI_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high'),
+  /** 单次运行的补丁上限，兜住模型跑飞 */
+  AI_MAX_PATCHES_PER_RUN: z.coerce.number().int().positive().default(80),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
