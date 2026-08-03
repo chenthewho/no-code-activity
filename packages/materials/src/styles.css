@@ -24,7 +24,8 @@
 .nca-swiper--empty,
 .nca-countdown--empty,
 .nca-rank--empty,
-.nca-lottery--empty {
+.nca-lottery--empty,
+.nca-reward--empty {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -444,4 +445,187 @@
   cursor: pointer;
   text-decoration: underline;
   opacity: 0.7;
+}
+
+.nca-rules {
+  box-sizing: border-box;
+}
+.nca-rules__title {
+  margin-bottom: 0.16rem;
+  font-weight: bold;
+}
+.nca-rules__item {
+  margin: 0 0 0.08rem;
+  word-break: break-word;
+}
+.nca-rules__index {
+  margin-right: 0.06rem;
+}
+.nca-rules--entry {
+  display: flex;
+}
+.nca-rules__btn {
+  padding: 0.08rem 0.24rem;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+/* 规则动辄十几条，弹窗里给它一个自己的滚动区，别把按钮顶出屏幕 */
+.nca-rules__scroll {
+  max-height: 50vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.nca-rules__empty {
+  color: #bbb;
+}
+
+.nca-reward--list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  box-sizing: border-box;
+}
+.nca-reward--grid {
+  display: grid;
+  gap: 0.16rem;
+  box-sizing: border-box;
+}
+.nca-reward__card {
+  display: flex;
+  align-items: center;
+  gap: 0.16rem;
+  padding: 0.16rem;
+  box-sizing: border-box;
+}
+/* 网格里改成竖排卡片：横排在三列宽度下会把奖品名挤成一列一个字 */
+.nca-reward--grid .nca-reward__card {
+  flex-direction: column;
+  text-align: center;
+  gap: 0.08rem;
+}
+.nca-reward__card--locked {
+  opacity: 0.6;
+}
+.nca-reward__img {
+  flex: 0 0 auto;
+  width: 0.96rem;
+  height: 0.96rem;
+  object-fit: contain;
+  border-radius: 0.08rem;
+}
+.nca-reward__img--empty {
+  background: #f0f0f0;
+}
+.nca-reward__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.04rem;
+  flex: 1;
+  min-width: 0;
+}
+.nca-reward--grid .nca-reward__info {
+  flex: 0 0 auto;
+  align-items: center;
+}
+.nca-reward__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nca-reward__desc {
+  word-break: break-word;
+}
+.nca-reward__btn {
+  flex: 0 0 auto;
+  height: 0.56rem;
+  padding: 0 0.24rem;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.nca-reward__btn:disabled {
+  cursor: not-allowed;
+}
+
+.nca-invite {
+  display: flex;
+  align-items: center;
+  gap: 0.12rem;
+  box-sizing: border-box;
+}
+.nca-invite__btn {
+  height: 0.8rem;
+  padding: 0 0.4rem;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: bold;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+.nca-invite__tip {
+  font-size: 0.24rem;
+  color: #999999;
+  line-height: 1.6;
+  text-align: center;
+}
+.nca-invite__link {
+  /* 链接很长，字号收小些，整条能露出更多，方便长按选中 */
+  font-size: 0.22rem;
+  color: #666666;
+}
+
+.nca-invite-record {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.nca-invite-record__summary {
+  padding: 0.12rem 0;
+  font-weight: bold;
+}
+.nca-invite-record__empty {
+  padding: 0.4rem 0;
+  text-align: center;
+  color: #999999;
+  font-size: 0.24rem;
+}
+.nca-invite-record__row {
+  display: flex;
+  align-items: center;
+  gap: 0.16rem;
+  padding: 0 0.08rem;
+  box-sizing: border-box;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.nca-invite-record__avatar {
+  flex: 0 0 auto;
+  width: 0.64rem;
+  height: 0.64rem;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #eeeeee;
+}
+.nca-invite-record__avatar--empty {
+  display: inline-block;
+  background: #e5e5e5;
+}
+.nca-invite-record__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nca-invite-record__time {
+  flex: 0 0 auto;
+  font-size: 0.22rem;
+}
+.nca-invite-record__status {
+  flex: 0 0 auto;
 }

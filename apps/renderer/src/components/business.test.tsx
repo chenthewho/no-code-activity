@@ -530,3 +530,198 @@ describe('绑定角色', () => {
     expect(screen.getByRole('button', { name: '换绑' })).toBeInTheDocument();
   });
 });
+
+describe('活动规则', () => {
+  const rulesDsl = (props: Record<string, unknown> = {}) =>
+    makeDsl(
+      {
+        rule_1: {
+          type: { resolvedName: 'Rules' },
+          props: {
+            content: '每人每天限抽 3 次\n奖品 7 个工作日内发放\n\n最终解释权归主办方',
+            ...props,
+          },
+        },
+      },
+      [],
+      {},
+    );
+
+  it('铺开形态按行渲染并自动编号', () => {
+    render(<RendererSurface dsl={rulesDsl()} />);
+    expect(screen.getByText('每人每天限抽 3 次')).toBeInTheDocument();
+    // 空行被忽略，第三条仍然是 3
+    expect(screen.getByText('最终解释权归主办方')).toBeInTheDocument();
+    expect(screen.getByText('3.')).toBeInTheDocument();
+  });
+
+  it('按钮形态默认收起，点开才看得到正文', () => {
+    render(<RendererSurface dsl={rulesDsl({ mode: 'dialog' })} />);
+    expect(screen.queryByText('每人每天限抽 3 次')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '活动规则' }));
+    expect(screen.getByText('每人每天限抽 3 次')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '我知道了' }));
+    expect(screen.queryByText('每人每天限抽 3 次')).not.toBeInTheDocument();
+  });
+});
+
+describe('奖励列表', () => {
+  const REWARDS = [
+    { id: 'a', name: '新手礼包', desc: '登录即得', status: 'ready' },
+    { id: 'b', name: '进阶礼包', desc: '邀请 3 位好友', status: 'locked' },
+    { id: 'c', name: '限定头像框', desc: '已到账', status: 'received' },
+  ];
+
+  const rewardDsl = (props: Record<string, unknown> = {}) =>
+    makeDsl(
+      {
+        rw_1: { type: { resolvedName: 'RewardList' }, props: { data: REWARDS, ...props } },
+        // 带前缀：「已领取」同时是按钮上的文案，光断言两个字会命中两处
+        probe_1: probe('领取结果：{{ state.got ? "已抛出" : "未触发" }}'),
+      },
+      [
+        {
+          id: 'e_receive',
+          nodeId: 'rw_1',
+          trigger: 'onCustom',
+          customEvent: 'receive',
+          actions: [{ type: 'state.set', key: 'got', value: true }],
+        },
+      ],
+      {},
+    );
+
+  it('没数据时给占位提示', () => {
+    render(<RendererSurface dsl={rewardDsl({ data: [] })} />);
+    expect(screen.getByText('暂无奖励')).toBeInTheDocument();
+  });
+
+  it('三种状态各自的按钮文案与可点性', () => {
+    render(<RendererSurface dsl={rewardDsl()} />);
+    expect(screen.getByRole('button', { name: '领取' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '未达成' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '已领取' })).toBeDisabled();
+  });
+
+  it('点可领取的按钮抛 receive 事件', async () => {
+    render(<RendererSurface dsl={rewardDsl()} />);
+    fireEvent.click(screen.getByRole('button', { name: '领取' }));
+    await waitFor(() => expect(screen.getByText('领取结果：已抛出')).toBeInTheDocument());
+  });
+
+  it('未达成的项点了没反应', async () => {
+    render(<RendererSurface dsl={rewardDsl()} />);
+    fireEvent.click(screen.getByRole('button', { name: '未达成' }));
+    await act(async () => {});
+    expect(screen.getByText('领取结果：未触发')).toBeInTheDocument();
+  });
+});
+
+describe('邀请好友', () => {
+  const inviteDsl = (props: Record<string, unknown> = {}) =>
+    makeDsl(
+      {
+        inv_1: {
+          type: { resolvedName: 'InviteFriend' },
+          props: { inviteCode: 'abc123', ...props },
+        },
+        probe_1: probe('{{ state.rel ? "已建立邀请关系" : "无邀请关系" }}'),
+      },
+      [
+        {
+          id: 'e_accept',
+          nodeId: 'inv_1',
+          trigger: 'onCustom',
+          customEvent: 'accept',
+          actions: [{ type: 'state.set', key: 'rel', value: '{{ payload.code }}' }],
+        },
+        {
+          id: 'e_copy',
+          nodeId: 'inv_1',
+          trigger: 'onCustom',
+          customEvent: 'copy',
+          actions: [{ type: 'state.set', key: 'copiedLink', value: '{{ payload.link }}' }],
+        },
+      ],
+      {},
+    );
+
+  it('点邀请弹出弹窗，链接里带上我的邀请码', () => {
+    const { container } = render(<RendererSurface dsl={inviteDsl()} />);
+    fireEvent.click(screen.getByRole('button', { name: '邀请好友' }));
+
+    const input = container.querySelector('.nca-invite__link') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.value).toContain('inviteCode=abc123');
+  });
+
+  it('点复制抛 copy 事件，把链接带给动作', async () => {
+    const dsl = inviteDsl();
+    dsl.craftJson.probe_1!.props.content = '{{ state.copiedLink ? "已复制" : "未复制" }}';
+    render(<RendererSurface dsl={dsl} />);
+    fireEvent.click(screen.getByRole('button', { name: '邀请好友' }));
+    fireEvent.click(screen.getByRole('button', { name: /复制链接/ }));
+
+    await waitFor(() => expect(screen.getByText('已复制')).toBeInTheDocument());
+  });
+
+  it('好友带邀请码进来自动弹窗，接受后建立邀请关系', async () => {
+    render(<RendererSurface dsl={inviteDsl({ invitedBy: 'friend999', inviterName: '小明' })} />);
+
+    await waitFor(() => expect(screen.getByText(/小明 邀请你一起参加活动/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: '接受邀请' }));
+
+    await waitFor(() => expect(screen.getByText('已建立邀请关系')).toBeInTheDocument());
+    expect(screen.getByText('已接受好友邀请')).toBeInTheDocument();
+  });
+
+  it('拒绝邀请只关窗，不建立关系', async () => {
+    render(<RendererSurface dsl={inviteDsl({ invitedBy: 'friend999' })} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '再逛逛' })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: '再逛逛' }));
+    await act(async () => {});
+
+    expect(screen.getByText('无邀请关系')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '邀请好友' })).toBeInTheDocument();
+  });
+
+  it('自己的链接自己点开不会弹接受邀请', async () => {
+    render(<RendererSurface dsl={inviteDsl({ invitedBy: 'abc123' })} />);
+    await act(async () => {});
+    expect(screen.queryByRole('button', { name: '接受邀请' })).not.toBeInTheDocument();
+  });
+});
+
+describe('邀请记录', () => {
+  const INVITES = [
+    { id: '1', name: '小明', time: '08-01 10:20', status: '已接受' },
+    { id: '2', name: '小红', time: '08-02 19:05', status: '已接受' },
+  ];
+
+  const recordDsl = (props: Record<string, unknown> = {}) =>
+    makeDsl(
+      { rec_1: { type: { resolvedName: 'InviteRecord' }, props: { data: INVITES, ...props } } },
+      [],
+      {},
+    );
+
+  it('渲染每条记录并按列表长度汇总人数', () => {
+    render(<RendererSurface dsl={recordDsl()} />);
+    expect(screen.getByText('小明')).toBeInTheDocument();
+    expect(screen.getByText('已邀请 2 位好友')).toBeInTheDocument();
+  });
+
+  it('绑定了总数就以总数为准，分页时列表长度不作数', () => {
+    render(<RendererSurface dsl={recordDsl({ total: 27 })} />);
+    expect(screen.getByText('已邀请 27 位好友')).toBeInTheDocument();
+  });
+
+  it('没人接受邀请时给空态，但汇总还在', () => {
+    render(<RendererSurface dsl={recordDsl({ data: [] })} />);
+    expect(screen.getByText('还没有好友接受邀请')).toBeInTheDocument();
+    expect(screen.getByText('已邀请 0 位好友')).toBeInTheDocument();
+  });
+});

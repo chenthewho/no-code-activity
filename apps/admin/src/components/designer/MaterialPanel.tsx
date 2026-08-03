@@ -6,6 +6,7 @@ import {
   ClockCircleOutlined,
   DesktopOutlined,
   FontSizeOutlined,
+  FileTextOutlined,
   GiftOutlined,
   IdcardOutlined,
   MobileOutlined,
@@ -13,6 +14,9 @@ import {
   PlaySquareOutlined,
   SearchOutlined,
   SelectOutlined,
+  ShareAltOutlined,
+  ShoppingOutlined,
+  TeamOutlined,
   TrophyOutlined,
   UserOutlined,
 } from '@ant-design/icons';
@@ -41,6 +45,10 @@ const ICONS: Record<string, ReactNode> = {
   Lottery: <GiftOutlined />,
   Login: <UserOutlined />,
   BindRole: <IdcardOutlined />,
+  Rules: <FileTextOutlined />,
+  RewardList: <ShoppingOutlined />,
+  InviteFriend: <ShareAltOutlined />,
+  InviteRecord: <TeamOutlined />,
 };
 
 export function MaterialPanel({ metas }: { metas: MaterialMeta[] }) {
@@ -108,7 +116,11 @@ export function MaterialPanel({ metas }: { metas: MaterialMeta[] }) {
           expandIconPosition="end"
           items={grouped.map((group) => ({
             key: group.category,
-            label: <span style={{ fontSize: 13, fontWeight: 600 }}>{CATEGORY_LABEL[group.category]}</span>,
+            label: (
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {CATEGORY_LABEL[group.category]}
+              </span>
+            ),
             styles: { body: { padding: '0 0 8px' } },
             children: (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -136,7 +148,8 @@ function MaterialCard({ meta, onDragStart }: { meta: MaterialMeta; onDragStart: 
   // 未声明 supportedHosts 视为全端可用
   const hosts = meta.supportedHosts ?? [];
   const showDesktop = hosts.length === 0 || hosts.some((h) => h.includes('pc') || h === 'browser');
-  const showMobile = hosts.length === 0 || hosts.some((h) => h.includes('app') || h.includes('sdk'));
+  const showMobile =
+    hosts.length === 0 || hosts.some((h) => h.includes('app') || h.includes('sdk'));
 
   return (
     <Tooltip title={meta.description ?? '拖到画布放置，或点击追加到末尾'} mouseEnterDelay={0.6}>
