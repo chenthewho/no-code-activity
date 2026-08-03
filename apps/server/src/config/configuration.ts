@@ -32,6 +32,13 @@ const envSchema = z.object({
   /** Renderer 产物地址，写进 manifest.entry */
   RENDERER_ENTRY_JS: z.string().default('http://localhost:5180/src/main.tsx'),
   RENDERER_ENTRY_CSS: z.string().default(''),
+
+  /**
+   * 活动页站点根，发布后返回的 activityUrl 由它拼出。
+   * 与 CDN_BASE_URL 是两回事：那是发布产物（DSL/manifest）的托管地址，
+   * 这是渲染器应用的访问地址——本地开发时两者根本不在同一个端口上。
+   */
+  ACTIVITY_BASE_URL: z.string().default('http://localhost:5180'),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

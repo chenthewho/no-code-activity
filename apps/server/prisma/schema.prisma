@@ -97,8 +97,8 @@ model Activity {
   ownerId String
   owner   User   @relation("ActivityOwner", fields: [ownerId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   draft       DslDraft?
@@ -107,6 +107,7 @@ model Activity {
   prizes      Prize[]
   channels    Channel[]
   submissions FormSubmission[]
+  aiRuns      AiRun[]
 
   @@index([status, updatedAt])
   @@index([ownerId])
@@ -126,16 +127,16 @@ model DslDraft {
 
 /// 发布快照：一经写入不再修改，是回滚与审计的依据
 model ActivityVersion {
-  id         String   @id @default(cuid())
-  activityId String
-  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
-  version    Int
-  dsl        Json
-  dslUrl     String?
+  id          String   @id @default(cuid())
+  activityId  String
+  activity    Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  version     Int
+  dsl         Json
+  dslUrl      String?
   manifestUrl String?
-  changelog  String?  @db.Text
-  createdBy  String?
-  createdAt  DateTime @default(now())
+  changelog   String?  @db.Text
+  createdBy   String?
+  createdAt   DateTime @default(now())
 
   @@unique([activityId, version])
   @@index([activityId, createdAt])
@@ -178,14 +179,14 @@ model TemplateFavorite {
 
 /// 物料注册表。代码里的 materials 包是实现，这里存可用性与灰度开关
 model Material {
-  name        String   @id
-  version     String
-  title       String
-  category    String
-  meta        Json
-  enabled     Boolean  @default(true)
-  sort        Int      @default(0)
-  updatedAt   DateTime @updatedAt
+  name      String   @id
+  version   String
+  title     String
+  category  String
+  meta      Json
+  enabled   Boolean  @default(true)
+  sort      Int      @default(0)
+  updatedAt DateTime @updatedAt
 
   @@map("material")
 }
@@ -193,7 +194,7 @@ model Material {
 // ---------- 资源 ----------
 
 model Asset {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   activityId String?
   activity   Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
   url        String    @db.VarChar(1024)
@@ -213,19 +214,19 @@ model Asset {
 // ---------- 业务能力 ----------
 
 model Prize {
-  id          String   @id @default(cuid())
-  activityId  String
-  activity    Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
-  name        String
-  image       String?
+  id           String   @id @default(cuid())
+  activityId   String
+  activity     Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  name         String
+  image        String?
   /// 万分比，10000 表示 100%
-  probability Int      @default(0)
-  total       Int      @default(0)
-  remaining   Int      @default(0)
+  probability  Int      @default(0)
+  total        Int      @default(0)
+  remaining    Int      @default(0)
   /// 单用户可中奖上限，0 不限
-  limitPerUser Int     @default(0)
-  sort        Int      @default(0)
-  createdAt   DateTime @default(now())
+  limitPerUser Int      @default(0)
+  sort         Int      @default(0)
+  createdAt    DateTime @default(now())
 
   records PrizeRecord[]
 
@@ -289,4 +290,95 @@ model AnalyticsEvent {
 
   @@index([activityId, event, createdAt])
   @@map("analytics_event")
+}
+
+// ---------- AI Agent ----------
+
+enum AiRunStatus {
+  running
+  interrupted
+  succeeded
+  failed
+  cancelled
+}
+
+/// 一次 AI 会话 = 一个 run，它的 id 同时就是 LangGraph 的 thread_id。
+/// 中断等待的是人的决策，可能几分钟也可能隔天，所以状态落 MySQL 而不是 Redis：
+/// TTL 语义对不上，而且这张表顺带就是「谁在什么时候批准了什么」的审计账。
+model AiRun {
+  id         String      @id @default(cuid())
+  activityId String?
+  activity   Activity?   @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  /// 能力注册表里的场景 key，决定跑哪张图
+  scenario   String      @default("build") @db.VarChar(64)
+  status     AiRunStatus @default(running)
+  title      String?
+  /// 当前挂起的中断点快照，null 表示没在等人
+  interrupt  Json?
+  error      String?     @db.Text
+  createdBy  String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  steps AiRunStep[]
+
+  @@index([activityId, createdAt])
+  @@index([createdBy, createdAt])
+  @@map("ai_run")
+}
+
+/// 每个节点、每次人工决策各一条，一经写入不再修改。
+/// 前端断线重连时靠它补齐前情，不必依赖 SSE 重放。
+model AiRunStep {
+  id        String   @id @default(cuid())
+  runId     String
+  run       AiRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  seq       Int
+  /// node | interrupt | resume | message | patch | error
+  kind      String   @db.VarChar(32)
+  node      String?  @db.VarChar(64)
+  payload   Json
+  tokensIn  Int      @default(0)
+  tokensOut Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([runId, seq])
+  @@index([runId, createdAt])
+  @@map("ai_run_step")
+}
+
+/// LangGraph 检查点。官方只提供 SQLite / Postgres / Redis 三种实现，
+/// 本项目是 MySQL，这两张表配合 PrismaCheckpointSaver 自己补上。
+/// 字段名对齐官方实现，将来换成官方 MySQL 版时数据可平移。
+model AiCheckpoint {
+  threadId           String   @db.VarChar(64)
+  checkpointNs       String   @default("") @db.VarChar(128)
+  checkpointId       String   @db.VarChar(64)
+  parentCheckpointId String?  @db.VarChar(64)
+  /// serde 的类型标记，与 checkpoint / metadata 的字节流配套
+  type               String?  @db.VarChar(32)
+  checkpoint         Bytes
+  metadata           Bytes
+  createdAt          DateTime @default(now())
+
+  @@id([threadId, checkpointNs, checkpointId])
+  @@index([threadId, checkpointNs])
+  @@map("ai_checkpoint")
+}
+
+/// 检查点之间的中间写入。idx 为负数的是 LangGraph 的保留通道
+/// （error/scheduled/interrupt/resume），允许覆盖；非负的先到先得。
+model AiCheckpointWrite {
+  threadId     String  @db.VarChar(64)
+  checkpointNs String  @default("") @db.VarChar(128)
+  checkpointId String  @db.VarChar(64)
+  taskId       String  @db.VarChar(64)
+  idx          Int
+  channel      String  @db.VarChar(128)
+  type         String? @db.VarChar(32)
+  value        Bytes
+
+  @@id([threadId, checkpointNs, checkpointId, taskId, idx])
+  @@index([threadId, checkpointNs, checkpointId])
+  @@map("ai_checkpoint_write")
 }

@@ -12,6 +12,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { StorageService } from '../storage/storage.service';
 import { stampMetaFromActivity } from '../dsl/draft.service';
+import { buildActivityUrl } from './activity-url';
 
 export interface PublishResult {
   version: number;
@@ -198,7 +199,7 @@ export class PublishService {
   }
 
   private activityUrl(activityId: string): string {
-    const base = this.config.get<string>('CDN_BASE_URL', 'http://localhost:3100/static');
-    return `${base.replace(/\/static$/, '')}/act/${activityId}`;
+    const base = this.config.get<string>('ACTIVITY_BASE_URL') || 'http://localhost:5180';
+    return buildActivityUrl(base, activityId);
   }
 }
