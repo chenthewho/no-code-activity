@@ -30,6 +30,8 @@ export interface RunTurnParams {
   system: Anthropic.TextBlockParam[];
   messages: Anthropic.MessageParam[];
   tools: Anthropic.Tool[];
+  /** 逼模型必须走某个工具，用于「这一步就是要一份结构化结果」的节点 */
+  toolChoice?: Anthropic.ToolChoice;
   /** 流式增量回调，用于把 token 实时推给前端 */
   onText?: (delta: string) => void;
   onThinking?: (delta: string) => void;
@@ -85,6 +87,7 @@ export class AnthropicClient {
       system: params.system,
       messages: params.messages,
       tools: params.tools,
+      ...(params.toolChoice ? { tool_choice: params.toolChoice } : {}),
       // Opus 5 默认就开思考；显式写出来是为了同时指定 display——
       // 默认 omitted 的话前端只能看到一段长长的空白
       thinking: { type: 'adaptive', display: 'summarized' },

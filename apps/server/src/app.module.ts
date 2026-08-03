@@ -6,6 +6,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { ActivityModule } from './modules/activity/activity.module';
+import { AiModule } from './modules/ai/ai.module';
 import { AssetModule } from './modules/asset/asset.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { MaterialModule } from './modules/material/material.module';
@@ -27,6 +28,7 @@ import { TemplateModule } from './modules/template/template.module';
     TemplateModule,
     MaterialModule,
     RuntimeModule,
+    AiModule,
   ],
   providers: [
     // 默认全局要求登录，公开接口用 @Public() 显式开口，避免漏加守卫
