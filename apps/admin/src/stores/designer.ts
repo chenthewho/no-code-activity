@@ -18,7 +18,10 @@ import { create } from 'zustand';
  * 两份状态各存各的迟早会不同步——从节点树点进弹窗里的文字，
  * 却因为开关还停在关闭上而什么都看不见。
  */
-export function modalOfNode(craftJson: FinalDsl['craftJson'], nodeId: string | null): string | null {
+export function modalOfNode(
+  craftJson: FinalDsl['craftJson'],
+  nodeId: string | null,
+): string | null {
   let cursor = nodeId;
   while (cursor) {
     const node = craftJson[cursor];
@@ -61,12 +64,22 @@ interface DesignerState {
   setCanvasBridge: (fn: ((type: string, payload?: unknown) => void) | null) => void;
 
   load: (dsl: FinalDsl) => void;
+  /**
+   * 整体替换 DSL，但保留历史与脏标记。
+   * AI 生成必须走这个而不是 load——load 会清空 past/future 并把 dirty 置 false，
+   * 结果就是这次生成既撤销不了，也不会触发自动保存，刷新页面直接丢失。
+   */
+  applyDsl: (next: FinalDsl) => void;
   select: (nodeId: string | null) => void;
   startDrag: (payload: DragPayload) => void;
   setDropTarget: (target: DropTargetInfo | null) => void;
   /** 释放拖拽：把落点应用成插入或移动，无落点则取消 */
   endDrag: () => void;
-  addNode: (materialName: string, defaultProps: Record<string, JsonValue>, parentId?: string) => void;
+  addNode: (
+    materialName: string,
+    defaultProps: Record<string, JsonValue>,
+    parentId?: string,
+  ) => void;
   updateProps: (nodeId: string, patch: Record<string, JsonValue>) => void;
   removeNode: (nodeId: string) => void;
   moveNode: (nodeId: string, direction: -1 | 1) => void;
@@ -140,7 +153,21 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   },
 
   load(dsl) {
-    set({ dsl, selectedId: null, dirty: false, past: [], future: [], dragging: null, dropTarget: null });
+    set({
+      dsl,
+      selectedId: null,
+      dirty: false,
+      past: [],
+      future: [],
+      dragging: null,
+      dropTarget: null,
+    });
+  },
+
+  applyDsl(next) {
+    // 走 commit：压栈一次历史、清空重做、置脏。
+    // 于是一次 AI 生成 = 一步撤销，且照常进入 1.5s 防抖自动保存
+    set(commit(get(), next));
   },
 
   select(nodeId) {

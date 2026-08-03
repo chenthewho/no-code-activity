@@ -10,6 +10,7 @@ import {
   SnippetsOutlined,
   MobileOutlined,
   NodeIndexOutlined,
+  RobotOutlined,
   RedoOutlined,
   SaveOutlined,
   ThunderboltOutlined,
@@ -37,6 +38,8 @@ interface Props {
   onPreview: () => void;
   onOpenEvents: () => void;
   onSaveAsTemplate: () => void;
+  onToggleAi: () => void;
+  aiOpen: boolean;
 }
 
 /**
@@ -60,6 +63,8 @@ export function DesignerHeader({
   onPreview,
   onOpenEvents,
   onSaveAsTemplate,
+  onToggleAi,
+  aiOpen,
 }: Props) {
   const { selectedId, removeNode, undo, redo, past, future, load } = useDesignerStore();
 
@@ -175,6 +180,17 @@ export function DesignerHeader({
         <Tooltip title="以当前草稿为蓝本创建模板">
           <Button type="text" size="small" icon={<SnippetsOutlined />} onClick={onSaveAsTemplate}>
             存为模板
+          </Button>
+        </Tooltip>
+
+        <Tooltip title="用自然语言修改当前页面">
+          <Button
+            type={aiOpen ? 'link' : 'text'}
+            size="small"
+            icon={<RobotOutlined />}
+            onClick={onToggleAi}
+          >
+            AI 助手
           </Button>
         </Tooltip>
       </Space>

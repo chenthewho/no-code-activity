@@ -14,6 +14,7 @@ import { DataSourcePanel } from '../components/designer/DataSourcePanel';
 import { formatIssues } from '../components/designer/IssuePanel';
 import { DesignerHeader, type DeviceMode } from '../components/designer/DesignerHeader';
 import { SaveAsTemplateModal } from '../components/designer/SaveAsTemplateModal';
+import { AiPanel } from '../components/designer/AiPanel';
 
 const AUTOSAVE_DELAY = 1500;
 
@@ -36,6 +37,7 @@ export function DesignerPage() {
   const [leftTab, setLeftTab] = useState('materials');
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [rightTabKey, setRightTabKey] = useState(0);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const { data: metas = [], isLoading: metaLoading } = useQuery({
     queryKey: ['materials'],
@@ -218,6 +220,12 @@ export function DesignerPage() {
           // 模板取的是服务端草稿，先把当前编辑落库，否则存进去的是上一次自动保存的内容
           saveMutation.mutate(undefined, { onSuccess: () => setSavingTemplate(true) });
         }}
+        aiOpen={aiOpen}
+        onToggleAi={() => {
+          // AI 读的是服务端草稿，先把当前编辑落库，否则它看到的是上一次自动保存的页面
+          if (!aiOpen && dirty) saveMutation.mutate();
+          setAiOpen((prev) => !prev);
+        }}
       />
 
       <Layout>
@@ -281,6 +289,16 @@ export function DesignerPage() {
         >
           <SettingPanel key={rightTabKey} metas={metas} />
         </Layout.Sider>
+
+        {aiOpen && (
+          <Layout.Sider
+            width={380}
+            theme="light"
+            style={{ overflow: 'auto', borderLeft: '1px solid #f0f0f0' }}
+          >
+            <AiPanel activityId={activityId} metas={metas} />
+          </Layout.Sider>
+        )}
       </Layout>
 
       <SaveAsTemplateModal
