@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { MATERIAL_CATEGORY } from '@nca/shared';
 import { defineMaterial, type MaterialComponentProps } from '../types';
 import { commonStyleSchema, defineMeta, prop, styleProp } from '../utils/schema';
@@ -10,6 +10,13 @@ export interface LoginProps extends CommonStyleProps {
   nickname?: string;
   avatar?: string;
   defaultAvatar?: string;
+  /**
+   * dialog：点按钮弹出内建的账号密码框；
+   * action：只抛 login 事件，登录交给「拉起登录」动作走宿主 SDK
+   */
+  mode?: 'dialog' | 'action';
+  /** 提交后本地即视为已登录。接了真实登录接口就关掉，登录态只认上面的绑定 */
+  localSession?: boolean;
   /** 未登录时的引导文案 */
   tip?: string;
   loginText?: string;
@@ -18,6 +25,14 @@ export interface LoginProps extends CommonStyleProps {
   logoutText?: string;
   /** 已登录时昵称前的前缀，如「Hi, 」 */
   greeting?: string;
+  dialogTitle?: string;
+  accountLabel?: string;
+  accountPlaceholder?: string;
+  passwordLabel?: string;
+  passwordPlaceholder?: string;
+  submitText?: string;
+  cancelText?: string;
+  errorText?: string;
   color?: string;
   fontSize?: number;
   buttonColor?: string;
@@ -37,12 +52,29 @@ function isLogged(value: unknown): boolean {
 }
 
 /**
- * 登录入口。登录动作本身由 EventBinder 的 login 动作走宿主适配层完成
- * （各宿主的登录方式差得很远：浏览器跳 SSO、SDK 走原生弹窗），
- * 物料只负责两件事：展示登录态、把用户的点击抛出去。
+ * 登录入口。
+ *
+ * 默认自带账号密码弹窗：活动页最常见的形态就是「点一下、填账号、进去抽奖」，
+ * 若把这一步交给运营用弹窗物料自己拼，每个活动都要重拼一遍，还拼不一致。
+ * 提交只抛 submit 事件（带账号密码），校验归后端——物料不做任何认证判断。
+ * 接宿主 SSO 的场景把形态切成 action，弹窗让位给 login 动作。
  */
-function Login({ children: _children, emit, ...props }: MaterialComponentProps<LoginProps>) {
-  const logged = isLogged(props.logged);
+function Login({
+  children: _children,
+  emit,
+  editing,
+  ...props
+}: MaterialComponentProps<LoginProps>) {
+  const [open, setOpen] = useState(false);
+  const [account, setAccount] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  /** 本地登录态里记住的账号，仅在 localSession 打开时生效 */
+  const [session, setSession] = useState<string | null>(null);
+
+  const local = props.localSession !== false;
+  const logged = isLogged(props.logged) || (local && session !== null);
+
   const fontSize = dp(props.fontSize ?? 26);
   const color = props.color || '#333333';
   const avatarSize = dp(props.avatarSize ?? 72);
@@ -65,43 +97,112 @@ function Login({ children: _children, emit, ...props }: MaterialComponentProps<L
       <span className="nca-login__avatar nca-login__avatar--empty" style={avatarStyle} />
     );
 
-  if (logged) {
-    return (
-      <div
-        className="nca-login nca-login--logged"
-        style={mergeStyle(commonStyle(props), textStyle)}
-      >
-        {avatar}
-        <span className="nca-login__name">
-          {(props.greeting ?? '') + (props.nickname || '游客')}
-        </span>
-        {props.showLogout && (
+  const handleEntry = () => {
+    emit?.('login');
+    // 编辑态不弹：画布里的点击本就被交互层拦着，弹出来也只会挡住页面
+    if (props.mode === 'action' || editing) return;
+    setError('');
+    setOpen(true);
+  };
+
+  const handleSubmit = () => {
+    if (!account.trim() || !password) {
+      setError(props.errorText ?? '请输入账号和密码');
+      return;
+    }
+    emit?.('submit', { username: account.trim(), password });
+    if (local) setSession(account.trim());
+    // 密码不在组件里留存，关窗即清
+    setPassword('');
+    setError('');
+    setOpen(false);
+  };
+
+  const dialog = open && (
+    <div className="nca-dialog" onClick={() => setOpen(false)}>
+      <div className="nca-dialog__panel" onClick={(e) => e.stopPropagation()}>
+        <div className="nca-dialog__title">{props.dialogTitle ?? '登录'}</div>
+        <label className="nca-dialog__field">
+          <span className="nca-dialog__label">{props.accountLabel ?? '账号'}</span>
+          <input
+            className="nca-dialog__input"
+            value={account}
+            placeholder={props.accountPlaceholder ?? '请输入账号'}
+            onChange={(e) => setAccount(e.target.value)}
+          />
+        </label>
+        <label className="nca-dialog__field">
+          <span className="nca-dialog__label">{props.passwordLabel ?? '密码'}</span>
+          <input
+            className="nca-dialog__input"
+            type="password"
+            value={password}
+            placeholder={props.passwordPlaceholder ?? '请输入密码'}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+        {error && <div className="nca-dialog__error">{error}</div>}
+        <div className="nca-dialog__footer">
+          <button type="button" className="nca-dialog__btn" onClick={() => setOpen(false)}>
+            {props.cancelText ?? '取消'}
+          </button>
           <button
             type="button"
-            className="nca-login__logout"
-            style={textStyle}
-            onClick={() => emit?.('logout')}
+            className="nca-dialog__btn nca-dialog__btn--primary"
+            style={buttonStyle}
+            onClick={handleSubmit}
           >
-            {props.logoutText ?? '退出'}
+            {props.submitText ?? '登录'}
           </button>
-        )}
+        </div>
       </div>
+    </div>
+  );
+
+  if (logged) {
+    return (
+      <>
+        <div
+          className="nca-login nca-login--logged"
+          style={mergeStyle(commonStyle(props), textStyle)}
+        >
+          {avatar}
+          <span className="nca-login__name">
+            {(props.greeting ?? '') + (props.nickname || session || '游客')}
+          </span>
+          {props.showLogout !== false && (
+            <button
+              type="button"
+              className="nca-login__logout"
+              style={textStyle}
+              onClick={() => {
+                setSession(null);
+                setAccount('');
+                emit?.('logout');
+              }}
+            >
+              {props.logoutText ?? '退出'}
+            </button>
+          )}
+        </div>
+        {dialog}
+      </>
     );
   }
 
   return (
-    <div className="nca-login" style={mergeStyle(commonStyle(props), textStyle)}>
-      {avatar}
-      {props.tip !== '' && <span className="nca-login__tip">{props.tip ?? '登录后参与活动'}</span>}
-      <button
-        type="button"
-        className="nca-login__btn"
-        style={buttonStyle}
-        onClick={() => emit?.('login')}
-      >
-        {props.loginText ?? '登录'}
-      </button>
-    </div>
+    <>
+      <div className="nca-login" style={mergeStyle(commonStyle(props), textStyle)}>
+        {avatar}
+        {props.tip !== '' && (
+          <span className="nca-login__tip">{props.tip ?? '登录后参与活动'}</span>
+        )}
+        <button type="button" className="nca-login__btn" style={buttonStyle} onClick={handleEntry}>
+          {props.loginText ?? '登录'}
+        </button>
+      </div>
+      {dialog}
+    </>
   );
 }
 
@@ -109,17 +210,26 @@ export const LoginMaterial = defineMaterial<LoginProps>({
   Component: Login,
   meta: defineMeta({
     name: 'Login',
-    version: '1.0.0',
+    version: '1.1.0',
     title: '登录',
     category: MATERIAL_CATEGORY.BUSINESS,
     icon: 'user',
-    description: '未登录展示登录入口，点击抛 login 事件接「拉起登录」动作；已登录展示头像昵称',
+    description: '点击弹出账号密码框，提交抛 submit 事件；已登录展示头像昵称',
     defaultProps: {
+      mode: 'dialog',
+      localSession: true,
       loginText: '登录',
       tip: '登录后参与活动',
       showAvatar: true,
-      showLogout: false,
+      showLogout: true,
       logoutText: '退出',
+      dialogTitle: '登录',
+      accountLabel: '账号',
+      accountPlaceholder: '请输入账号',
+      passwordLabel: '密码',
+      passwordPlaceholder: '请输入密码',
+      submitText: '登录',
+      cancelText: '取消',
       fontSize: 26,
       color: '#333333',
       buttonColor: '#1677ff',
@@ -127,10 +237,21 @@ export const LoginMaterial = defineMaterial<LoginProps>({
       avatarSize: 72,
     },
     events: [
-      { name: 'login', label: '点击登录', payloadKeys: [] },
+      { name: 'login', label: '点击登录入口', payloadKeys: [] },
+      { name: 'submit', label: '提交账号密码', payloadKeys: ['username', 'password'] },
       { name: 'logout', label: '点击退出', payloadKeys: [] },
     ],
     propsSchema: [
+      prop({
+        key: 'mode',
+        label: '登录形态',
+        editor: 'radio',
+        options: [
+          { label: '账号密码弹窗', value: 'dialog' },
+          { label: '交给登录动作', value: 'action' },
+        ],
+        help: '选「交给登录动作」时不弹窗，只抛 login 事件，由宿主 SDK 拉起登录',
+      }),
       prop({
         key: 'logged',
         label: '登录态',
@@ -140,11 +261,18 @@ export const LoginMaterial = defineMaterial<LoginProps>({
         help: '绑定登录后写入的状态或数据源字段，有值即按已登录展示',
       }),
       prop({
+        key: 'localSession',
+        label: '本地维持登录态',
+        editor: 'boolean',
+        help: '提交后组件自己记住登录态；接了真实登录接口就关掉，只认上面的绑定',
+      }),
+      prop({
         key: 'nickname',
         label: '昵称',
         editor: 'string',
         bindable: true,
         placeholder: '{{ state.nickname }}',
+        help: '留空则显示提交时填的账号',
       }),
       prop({
         key: 'avatar',
@@ -170,6 +298,54 @@ export const LoginMaterial = defineMaterial<LoginProps>({
         label: '退出文案',
         editor: 'string',
         visibleWhen: '{{ props.showLogout }}',
+      }),
+      prop({
+        key: 'dialogTitle',
+        label: '弹窗标题',
+        editor: 'string',
+        visibleWhen: "{{ props.mode === 'dialog' }}",
+      }),
+      prop({
+        key: 'accountLabel',
+        label: '账号标题',
+        editor: 'string',
+        visibleWhen: "{{ props.mode === 'dialog' }}",
+      }),
+      prop({
+        key: 'accountPlaceholder',
+        label: '账号占位文案',
+        editor: 'string',
+        visibleWhen: "{{ props.mode === 'dialog' }}",
+      }),
+      prop({
+        key: 'passwordLabel',
+        label: '密码标题',
+        editor: 'string',
+        visibleWhen: "{{ props.mode === 'dialog' }}",
+      }),
+      prop({
+        key: 'passwordPlaceholder',
+        label: '密码占位文案',
+        editor: 'string',
+        visibleWhen: "{{ props.mode === 'dialog' }}",
+      }),
+      prop({
+        key: 'submitText',
+        label: '提交按钮文案',
+        editor: 'string',
+        visibleWhen: "{{ props.mode === 'dialog' }}",
+      }),
+      prop({
+        key: 'cancelText',
+        label: '取消按钮文案',
+        editor: 'string',
+        visibleWhen: "{{ props.mode === 'dialog' }}",
+      }),
+      prop({
+        key: 'errorText',
+        label: '未填完提示',
+        editor: 'string',
+        visibleWhen: "{{ props.mode === 'dialog' }}",
       }),
       styleProp({ key: 'buttonImage', label: '按钮图', editor: 'image' }),
       styleProp({ key: 'buttonColor', label: '按钮底色', editor: 'color' }),

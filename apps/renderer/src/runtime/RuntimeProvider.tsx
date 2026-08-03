@@ -158,7 +158,9 @@ export function RuntimeProvider({
           return;
 
         case 'modal.open':
-          setOpenModals((prev) => (prev.includes(action.modalId) ? prev : [...prev, action.modalId]));
+          setOpenModals((prev) =>
+            prev.includes(action.modalId) ? prev : [...prev, action.modalId],
+          );
           return;
 
         case 'modal.close':
