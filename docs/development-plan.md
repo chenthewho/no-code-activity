@@ -283,3 +283,34 @@ M2 期间通过真实使用暴露并修复的缺陷（都补了回归测试）�
 优先级排序：① 奖品配置与抽奖接口（Redis Lua 原子扣减 + 防刷）→
 ② 表单提交与活动预约 → ③ 渠道链接与分享落地页 → ④ SSO 对接 →
 ⑤ 埋点上报与基础报表 → ⑥ COS STS 直传替换服务端中转。
+
+---
+
+## 10. AI Agent 接入（本文之外的增量）
+
+参照得物《活动搭建平台 AI 实践》第二版范式落地，详见
+[AI Agent 技术文档](ai-agent.md)。这里只记与本文原规划的关系与新增的决策。
+
+| # | 决策 | 说明 |
+|---|---|---|
+| 1 | 工作流引擎用 LangGraph，没有自研 | 与前几次「能自己写就少一个依赖」的取舍相反。理由是 interrupt/resume + Checkpointer 这套人机协同语义自己实现代价不低，而它恰好是这版的核心。代价是得自己补一个 MySQL 检查点存储——官方只有 SQLite/Postgres/Redis |
+| 2 | AI 不直接产出 FinalDSL，只产出补丁 | 节点 id 的格式、唯一性、parent/nodes 双向一致跟「页面长什么样」无关，却每错一次就是一次白屏。模型用 @ref 占位，真实 id 由 applyPatches 生成，从结构上就没机会写错 |
+| 3 | 物料清单读 material 表，不 import @nca/materials | 那个包是 ESM + React，拉进 CJS 服务端要把 React 带进生产依赖；且表里的 enabled 开关应当同时对模型生效 |
+| 4 | 工具 schema 由 zod 派生，不手写 | 协议加一个算子模型第二天就会用；测试断言「工具暴露的算子数 == 协议里的算子数」，漂移立刻红 |
+| 5 | 权限码新增 ai:use / ai:publish | 不复用 activity:edit —— 出问题时要能单独关掉 AI 而不影响手工搭建 |
+| 6 | SSE 手写，不用 @Sse | 全局 TransformInterceptor 会把事件包坏，AllExceptionsFilter 会在流中途二次写响应 |
+
+### 实施中发现、值得记住的坑
+
+- **LangGraph 恢复时会把整个节点从头再跑一遍**。interrupt 前面放任何昂贵或有
+  副作用的动作，都会在 resume 时重复执行。必须让 interrupt 独占一个节点，
+  准备工作放前一个节点、把卡片写进 state。
+- **LangGraph 把 falsy 的 resume 当成「没给输入」**，`Command({ resume: false })`
+  直接抛 `EmptyInputError`。「拒绝」这类决策不能写成裸布尔。
+- **中断卡片不能由节点 emit**，否则 resume 重跑节点时会把同一张卡片再推一遍。
+  应在 invoke 返回后从 `getState().tasks[].interrupts` 统一读。
+- **AI 产物落画布必须走新增的 `applyDsl` 而不是 `load`**。load 会清空撤销栈并把
+  dirty 置回 false，结果是这次生成既撤销不了也不会自动保存，刷新即丢。
+- **`state.set` 原本不做表达式求值**（已修）。抽奖标准闭环依赖「把接口返回的
+  中奖下标写进 state」，不求值这条链路在线上是断的——点了没反应，还不报错。
+  同时修掉了「同一事件内后一个动作读不到前一个动作刚写入的值」。

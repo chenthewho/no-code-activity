@@ -51,7 +51,7 @@ pnpm dev                     # 或分别启动三个服务
 
 ```bash
 pnpm build          # 全量构建
-pnpm test           # 全量测试（113 项）
+pnpm test           # 全量测试（178 项）
 pnpm typecheck
 pnpm lint
 ```
@@ -72,12 +72,21 @@ pnpm lint
 - **自由摆放**：任意组件都可切成绝对定位，拖本体改坐标、拖八向手柄改尺寸；
   切换定位方式时按当前渲染位置补齐 top/left/width，元素不跳位也不收缩；
   流式节点拖本体则是重排。一次拖拽一步撤销
+- **AI Agent**：`/ai` 工作台用六张中断卡片把「一句话 → 可发布的活动」串起来，
+  设计器右侧另有一个一问一答的 AI 面板改局部；AI 只产出 DSL 补丁，
+  不直接写 DSL，落库走的还是运营手工搭建那条路。
+  详见 [AI Agent 技术文档](docs/ai-agent.md)
 
 ## 下一步（M3）
 
 奖品配置与抽奖（Redis 原子扣减）、表单提交、活动预约、渠道链接、SSO 对接、
 埋点上报、COS STS 直传。详见 [开发规划](docs/development-plan.md)。
 
+> AI 功能需要配 `ANTHROPIC_API_KEY`（见 `apps/server/.env.example`）。
+> 不配也不影响其余功能——只有调 AI 接口时才报「未配置」。
+
 ## 文档
 
 - [开发规划](docs/development-plan.md) — 架构、协议、里程碑与关键决策
+- [AI Agent 技术文档](docs/ai-agent.md) — 工作流与中断点、补丁协议、能力注册表、
+  权限模型、提示词与缓存、Checkpointer、扩展指南与已知限制
