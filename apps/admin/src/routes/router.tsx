@@ -12,6 +12,7 @@ import { ActivityListPage } from './ActivityListPage';
 import { ActivityDetailPage } from './ActivityDetailPage';
 import { DesignerPage } from './DesignerPage';
 import { TemplateListPage } from './TemplateListPage';
+import { AiWorkbenchPage } from './AiWorkbenchPage';
 import { useAuthStore } from '../stores/auth';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -82,6 +83,13 @@ const templateRoute = createRoute({
   beforeLoad: () => requireAuth([PERMISSION.TEMPLATE_VIEW]),
 });
 
+const aiRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/ai',
+  component: AiWorkbenchPage,
+  beforeLoad: () => requireAuth([PERMISSION.AI_USE]),
+});
+
 /** 设计器铺满全屏，不套后台布局 */
 const designerRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -93,7 +101,13 @@ const designerRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   designerRoute,
-  authedRoute.addChildren([indexRoute, activityListRoute, activityDetailRoute, templateRoute]),
+  authedRoute.addChildren([
+    indexRoute,
+    activityListRoute,
+    activityDetailRoute,
+    templateRoute,
+    aiRoute,
+  ]),
 ]);
 
 export const router = createRouter({ routeTree });

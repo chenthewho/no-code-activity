@@ -1,5 +1,11 @@
 import { Layout, Menu, Dropdown, Avatar, Spin } from 'antd';
-import { AppstoreOutlined, LogoutOutlined, ProjectOutlined, ThunderboltFilled } from '@ant-design/icons';
+import {
+  AppstoreOutlined,
+  RobotOutlined,
+  LogoutOutlined,
+  ProjectOutlined,
+  ThunderboltFilled,
+} from '@ant-design/icons';
 import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import { PERMISSION } from '@nca/shared';
 import { useAuthStore } from '../stores/auth';
@@ -13,7 +19,9 @@ export function AppLayout() {
 
   if (initializing) {
     return (
-      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>
+      <div
+        style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}
+      >
         <Spin size="large" />
       </div>
     );
@@ -31,6 +39,11 @@ export function AppLayout() {
       icon: <AppstoreOutlined />,
       label: <Link to="/templates">模板中心</Link>,
     },
+    can(PERMISSION.AI_USE) && {
+      key: '/ai',
+      icon: <RobotOutlined />,
+      label: <Link to="/ai">AI 工作台</Link>,
+    },
   ].filter(Boolean) as { key: string; icon?: React.ReactNode; label: React.ReactNode }[];
 
   const selected = items.find((item) => location.pathname.startsWith(item.key))?.key;
@@ -45,7 +58,16 @@ export function AppLayout() {
           paddingInline: 24,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontSize: 16, fontWeight: 600 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            color: '#fff',
+            fontSize: 16,
+            fontWeight: 600,
+          }}
+        >
           <ThunderboltFilled style={{ color: '#1677ff' }} />
           活动运营平台
         </div>
