@@ -7,5 +7,6 @@ export * from './schema/node';
 export * from './schema/material';
 export * from './schema/dsl';
 export * from './validate';
+export * from './patch';
 export * from './migrate';
 export * from './factory';
