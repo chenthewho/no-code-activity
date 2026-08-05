@@ -51,6 +51,18 @@ const envSchema = z.object({
   /** 流式输出，给足余量；编排类任务的思考与工具调用都算在里面 */
   AI_MAX_TOKENS: z.coerce.number().int().positive().default(64000),
   AI_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high'),
+  /**
+   * Opus 5 的思考模式。走网关/非 Claude 后端（如 deepseek）时有些后端
+   * 不认 thinking + tool_choice 的组合，会直接 400，此时置 off 连
+   * output_config 一起省掉。
+   */
+  AI_THINKING: z.enum(['adaptive', 'off']).default('adaptive'),
+  /**
+   * 工具选择策略。force=强制指定工具（Opus 5 原生支持）；auto=降级成
+   * 交给模型自己选——网关/非 Claude 后端（如 deepseek）的 thinking 模式
+   * 不允许强制 tool_choice，会直接 400，只能 auto。
+   */
+  AI_TOOL_CHOICE: z.enum(['force', 'auto']).default('force'),
   /** 单次运行的补丁上限，兜住模型跑飞 */
   AI_MAX_PATCHES_PER_RUN: z.coerce.number().int().positive().default(80),
 });

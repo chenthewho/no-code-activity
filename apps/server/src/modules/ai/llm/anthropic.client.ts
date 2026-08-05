@@ -44,6 +44,68 @@ export class LlmRefusalError extends Error {
   }
 }
 
+/**
+ * 网关 SSE 归一化。
+ *
+ * opencode 这类网关的 message_start 事件不带 message.content（标准 Anthropic
+ * 协议里是空数组 []），@anthropic-ai/sdk 0.115 的 MessageStream 把 content 当成
+ * undefined，第一条 content_block_start 一进来就 `.push` 崩掉。这里在 fetch 层
+ * 逐帧解析 SSE，把缺失的 content 补成 []。直连官方时协议是标准的，这段不生效。
+ */
+function normalizeSseFrame(frame: string): string {
+  const dataLine = frame.split('\n').find((l) => l.startsWith('data: '));
+  if (!dataLine) return frame;
+  try {
+    const evt = JSON.parse(dataLine.slice(6)) as { type?: string; message?: { content?: unknown } };
+    if (evt.type === 'message_start' && evt.message && !Array.isArray(evt.message.content)) {
+      evt.message.content = [];
+      return frame.replace(dataLine, `data: ${JSON.stringify(evt)}`);
+    }
+  } catch {
+    // 帧不是 JSON 或解析失败，原样放行
+  }
+  return frame;
+}
+
+const gatewayFetch: typeof fetch = async (url, init) => {
+  const res = await fetch(url, init);
+  if (!res.body) return res;
+
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = '';
+
+  // SSE 以空行分帧，最后一段可能只收到一半，留在缓冲里等下一片
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop() ?? '';
+      for (const frame of frames) {
+        controller.enqueue(encoder.encode(`${normalizeSseFrame(frame)}\n\n`));
+      }
+    },
+    flush(controller) {
+      if (buffer) controller.enqueue(encoder.encode(`${normalizeSseFrame(buffer)}\n\n`));
+    },
+  });
+
+  return new Response(res.body.pipeThrough(transform), {
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+  });
+};
+
+/**
+ * 重试时回放模型上一条回复。续聊里 replay 带 thinking 的 assistant 消息
+ * 需要 thinking_signature（一些网关也不认），直接只回放 text / tool_use 块最稳。
+ * auto 模式下模型若只回了文字，这里回放出来的就是纯文本。
+ */
+export function replayAssistantContent(turn: LlmTurn): Anthropic.ContentBlockParam[] {
+  return turn.content.filter((block) => block.type !== 'thinking');
+}
+
 @Injectable()
 export class AnthropicClient {
   private readonly logger = new Logger(AnthropicClient.name);
@@ -55,6 +117,11 @@ export class AnthropicClient {
     return Boolean(this.config.get('ANTHROPIC_API_KEY', { infer: true }));
   }
 
+  /** 工具选择策略：force=强制指定工具（Opus 5 原生），auto=网关后端只能交模型自选 */
+  get toolChoiceMode(): 'force' | 'auto' {
+    return this.config.get('AI_TOOL_CHOICE', { infer: true });
+  }
+
   private sdk(): Anthropic {
     const apiKey = this.config.get('ANTHROPIC_API_KEY', { infer: true });
     if (!apiKey) {
@@ -63,7 +130,11 @@ export class AnthropicClient {
     }
     if (!this.client) {
       const baseURL = this.config.get('ANTHROPIC_BASE_URL', { infer: true });
-      this.client = new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}) });
+      // 走网关时套一层 fetch 补网关的协议窟窿，直连官方不装
+      this.client = new Anthropic({
+        apiKey,
+        ...(baseURL ? { baseURL, fetch: gatewayFetch } : {}),
+      });
     }
     return this.client;
   }
@@ -80,6 +151,16 @@ export class AnthropicClient {
     const model = this.config.get('AI_MODEL', { infer: true });
     const maxTokens = this.config.get('AI_MAX_TOKENS', { infer: true });
     const effort = this.config.get('AI_EFFORT', { infer: true });
+    const thinkingMode = this.config.get('AI_THINKING', { infer: true });
+    const toolChoiceMode = this.config.get('AI_TOOL_CHOICE', { infer: true });
+
+    // deepseek 这类网关后端的 thinking 模式不允许强制 tool_choice（type: tool），
+    // 会直接 400。auto 模式把「强制指定工具」降级成「交给模型选」，
+    // 调用方需要用单工具 + 提示词 + 重试来兜住模型不调工具的情况。
+    const toolChoice =
+      params.toolChoice && toolChoiceMode === 'auto' && params.toolChoice.type === 'tool'
+        ? ({ type: 'auto' } as const)
+        : params.toolChoice;
 
     const stream = client.messages.stream({
       model,
@@ -87,11 +168,17 @@ export class AnthropicClient {
       system: params.system,
       messages: params.messages,
       tools: params.tools,
-      ...(params.toolChoice ? { tool_choice: params.toolChoice } : {}),
-      // Opus 5 默认就开思考；显式写出来是为了同时指定 display——
-      // 默认 omitted 的话前端只能看到一段长长的空白
-      thinking: { type: 'adaptive', display: 'summarized' },
-      output_config: { effort },
+      ...(toolChoice ? { tool_choice: toolChoice } : {}),
+      // Opus 5 默认开思考，显式写出来是为了同时指定 display——
+      // 默认 omitted 的话前端只能看到一段长长的空白。
+      // 走网关/非 Claude 后端时置 AI_THINKING=off：有些后端不认
+      // thinking + tool_choice 的组合会直接 400，此时连 output_config 一起省掉。
+      ...(thinkingMode === 'adaptive'
+        ? {
+            thinking: { type: 'adaptive', display: 'summarized' },
+            output_config: { effort },
+          }
+        : {}),
     });
 
     if (params.onText) {

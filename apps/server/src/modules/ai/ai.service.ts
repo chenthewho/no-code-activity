@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type Anthropic from '@anthropic-ai/sdk';
 import { Command } from '@langchain/langgraph';
 import { applyPatches, dslPatchSchema, type DslPatch, type FinalDsl } from '@nca/dsl';
 import { PERMISSION, type AiEvent, type AiInterrupt, type AiResume } from '@nca/shared';
@@ -8,7 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { DraftService } from '../dsl/draft.service';
 import { PublishService } from '../publish/publish.service';
 import { PrismaCheckpointSaver } from './checkpointer/prisma-checkpointer';
-import { AnthropicClient, LlmRefusalError } from './llm/anthropic.client';
+import { AnthropicClient, LlmRefusalError, replayAssistantContent } from './llm/anthropic.client';
 import { loadMaterialCatalog, type MaterialCatalog } from './llm/catalog';
 import { buildSystemPrompt, renderPageOutline } from './llm/prompt';
 import { buildTools } from './llm/tools';
@@ -234,31 +235,58 @@ export class AiService {
           ? `运营当前选中的是节点 ${dto.selectedNodeId}（${current.craftJson[dto.selectedNodeId]?.type.resolvedName ?? '未知'}），没有特别说明时改动应聚焦在它身上。`
           : '';
 
-        const turn = await this.llm.runTurn({
+        const messages: Anthropic.MessageParam[] = [
+          {
+            role: 'user',
+            content: [
+              `运营的要求：${dto.instruction}`,
+              focus,
+              '',
+              '当前页面：',
+              renderPageOutline(current),
+              '',
+              '请调用 apply_patches 完成这次修改。只改需要改的部分。',
+            ]
+              .filter(Boolean)
+              .join('\n'),
+          },
+        ];
+        // auto 模式下只留 apply_patches 一个工具，避免模型在局部编辑时
+        // 跑去 read_page 再回来，触发 tool_calls 必须跟 tool_result 的协议约束
+        const tools =
+          this.llm.toolChoiceMode === 'auto'
+            ? buildTools(permissions).filter((t) => t.name === 'apply_patches')
+            : buildTools(permissions);
+        let turn = await this.llm.runTurn({
           system: buildSystemPrompt({ catalog }),
-          messages: [
-            {
-              role: 'user',
-              content: [
-                `运营的要求：${dto.instruction}`,
-                focus,
-                '',
-                '当前页面：',
-                renderPageOutline(current),
-                '',
-                '请调用 apply_patches 完成这次修改。只改需要改的部分。',
-              ]
-                .filter(Boolean)
-                .join('\n'),
-            },
-          ],
-          tools: buildTools(permissions),
+          messages,
+          tools,
           toolChoice: { type: 'tool', name: 'apply_patches' },
           onThinking: (delta) => queue.push({ type: 'thinking', delta }),
           onText: (delta) => queue.push({ type: 'text', delta }),
         });
 
-        const call = turn.toolUses.find((t) => t.name === 'apply_patches');
+        let call = turn.toolUses.find((t) => t.name === 'apply_patches');
+        if (!call) {
+          // auto 模式下模型可能只回了文字；回放（去 thinking）后再要求一次
+          const retry = await this.llm.runTurn({
+            system: buildSystemPrompt({ catalog }),
+            messages: [
+              ...messages,
+              { role: 'assistant', content: replayAssistantContent(turn) },
+              {
+                role: 'user',
+                content:
+                  '你上一条没有调用 apply_patches。请直接调用 apply_patches 产出改动，不要回复文字或调用其他工具。',
+              },
+            ],
+            tools,
+            toolChoice: { type: 'tool', name: 'apply_patches' },
+            onThinking: (delta) => queue.push({ type: 'thinking', delta }),
+            onText: (delta) => queue.push({ type: 'text', delta }),
+          });
+          call = retry.toolUses.find((t) => t.name === 'apply_patches');
+        }
         if (!call) throw new Error('模型没有产出任何改动');
         const input = call.input as { summary: string; patches: unknown[] };
 

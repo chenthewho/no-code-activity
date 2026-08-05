@@ -252,6 +252,13 @@ token，模型真正需要的是「有哪些节点、什么类型、谁是谁的
 不发 `temperature` / `top_p`——Opus 5 已移除，发了直接 400。
 读 `content` 前**必须先判 `stop_reason === 'refusal'`**，拒答时 content 可能是空的。
 
+> **走第三方网关时**（`ANTHROPIC_BASE_URL` 指向网关，后端是 deepseek 这类）：
+> - `AI_THINKING=off`——这类后端强制开 thinking 且不认 thinking + `tool_choice` 组合，会 400。
+> - `AI_TOOL_CHOICE=auto`——同上原因，强制 `{type:'tool'}` 会被拒，降级成 `auto`；
+>   build / edit 节点此时只给模型 `apply_patches` 一个工具，模型没调工具会自动重试一次。
+> 另外这类网关的 SSE `message_start` 常缺 `content` 字段，`AnthropicClient` 里有一个
+> `gatewayFetch` 在 fetch 层把 `content: []` 补上，否则老版 SDK 的 MessageStream 直接崩。
+
 ---
 
 ## 7. Checkpointer
@@ -351,6 +358,8 @@ ANTHROPIC_BASE_URL=              # 走代理/网关时填，直连官方留空
 AI_MODEL="claude-opus-5"
 AI_MAX_TOKENS=64000
 AI_EFFORT=high                   # low | medium | high | xhigh | max
+AI_THINKING=adaptive             # adaptive | off；走网关/非 Claude 后端用 off
+AI_TOOL_CHOICE=force             # force | auto；走网关/非 Claude 后端用 auto
 AI_MAX_PATCHES_PER_RUN=80
 ```
 

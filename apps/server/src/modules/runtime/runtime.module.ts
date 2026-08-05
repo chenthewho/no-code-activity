@@ -1,4 +1,5 @@
 import { Controller, Get, Injectable, Module, NotFoundException, Param } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { finalDslSchema, manifestSchema, type FinalDsl, type Manifest } from '@nca/dsl';
 import { ACTIVITY_STATUS } from '@nca/shared';
@@ -14,7 +15,10 @@ import { PrismaService } from '../../common/prisma/prisma.service';
  */
 @Injectable()
 class RuntimeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   private async currentVersion(activityId: string) {
     const activity = await this.prisma.activity.findFirst({
@@ -40,11 +44,14 @@ class RuntimeService {
     if (!version.manifestUrl) throw new NotFoundException('该版本缺少 manifest');
     // manifest 存的是 URL，这里按存量数据重建一份等价结构，避免多一跳网络请求
     const dsl = finalDslSchema.parse(version.dsl);
+    const entryJs = this.config.get('RENDERER_ENTRY_JS', { infer: true }) ?? '';
+    const entryCss = this.config.get('RENDERER_ENTRY_CSS', { infer: true }) ?? '';
     return manifestSchema.parse({
       activityId,
       version: version.version,
       publishedAt: version.createdAt.toISOString(),
-      entry: { js: [''], css: [] },
+      // 入口脚本/样式来自配置（写进 manifest 的同一份），不要硬编码空串
+      entry: { js: entryJs ? [entryJs] : [''], css: entryCss ? [entryCss] : [] },
       dsl: version.dslUrl ?? '',
       runtime: { schemaVersion: dsl.schemaVersion, hosts: dsl.meta.hosts },
     });

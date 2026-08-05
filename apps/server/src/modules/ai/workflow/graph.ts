@@ -13,7 +13,7 @@ import type { AiEvent, AiInterrupt, AiResume } from '@nca/shared';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { DraftService } from '../../dsl/draft.service';
 import type { PublishService } from '../../publish/publish.service';
-import type { AnthropicClient } from '../llm/anthropic.client';
+import { replayAssistantContent, type AnthropicClient } from '../llm/anthropic.client';
 import type { MaterialCatalog } from '../llm/catalog';
 import { buildSystemPrompt, renderPageOutline } from '../llm/prompt';
 import { buildTools } from '../llm/tools';
@@ -148,14 +148,36 @@ async function askForTool<T>(
   tool: Anthropic.Tool,
   userText: string,
 ): Promise<T> {
-  const turn = await deps.llm.runTurn({
+  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userText }];
+  let turn = await deps.llm.runTurn({
     system: buildSystemPrompt({ catalog: deps.catalog }),
-    messages: [{ role: 'user', content: userText }],
+    messages,
     tools: [tool],
     toolChoice: { type: 'tool', name: tool.name },
     onThinking: (delta) => deps.emit({ type: 'thinking', delta }),
   });
-  const call = turn.toolUses.find((t) => t.name === tool.name);
+  let call = turn.toolUses.find((t) => t.name === tool.name);
+
+  if (!call) {
+    // AI_TOOL_CHOICE=auto（网关后端不允许强制工具）时，模型可能只回了文字。
+    // 把上一条回放回去再明确要求一次，仍不调就报错，让运营重来。
+    const retry = await deps.llm.runTurn({
+      system: buildSystemPrompt({ catalog: deps.catalog }),
+      messages: [
+        ...messages,
+        { role: 'assistant', content: replayAssistantContent(turn) },
+        {
+          role: 'user',
+          content: `你刚才没有调用工具。请直接调用 ${tool.name} 并返回结构化结果，不要回复普通文字。`,
+        },
+      ],
+      tools: [tool],
+      toolChoice: { type: 'tool', name: tool.name },
+      onThinking: (delta) => deps.emit({ type: 'thinking', delta }),
+    });
+    call = retry.toolUses.find((t) => t.name === tool.name);
+  }
+
   if (!call) throw new Error(`模型没有按要求调用 ${tool.name}`);
   return call.input as T;
 }
@@ -366,32 +388,62 @@ export function buildWorkflow(deps: WorkflowDeps) {
         .map(([k, v]) => `- ${k}: ${v}`)
         .join('\n');
 
-      const turn = await deps.llm.runTurn({
+      const messages: Anthropic.MessageParam[] = [
+        {
+          role: 'user',
+          content: [
+            `运营需求：${state.prompt}`,
+            `确认过的组件清单：${state.selected.join('、')}`,
+            endpointText ? `已确认的接口地址：\n${endpointText}` : '',
+            '',
+            '当前页面：',
+            renderPageOutline(current),
+            '',
+            '请调用 apply_patches 把页面搭出来。一次给全，不要分多次。',
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        },
+      ];
+      // auto 模式下只留 apply_patches 一个工具：模型没有别的工具可调，
+      // 就不会在 build 阶段跑去 read_page 再回来，重试也就不会碰到
+      // tool_calls 必须跟 tool_result 的协议约束。页面大纲已在提示词里，
+      // 少个 read_page 无伤大雅。
+      const tools =
+        deps.llm.toolChoiceMode === 'auto'
+          ? buildTools(deps.permissions).filter((t) => t.name === 'apply_patches')
+          : buildTools(deps.permissions);
+      let turn = await deps.llm.runTurn({
         system: buildSystemPrompt({ catalog: deps.catalog }),
-        messages: [
-          {
-            role: 'user',
-            content: [
-              `运营需求：${state.prompt}`,
-              `确认过的组件清单：${state.selected.join('、')}`,
-              endpointText ? `已确认的接口地址：\n${endpointText}` : '',
-              '',
-              '当前页面：',
-              renderPageOutline(current),
-              '',
-              '请调用 apply_patches 把页面搭出来。一次给全，不要分多次。',
-            ]
-              .filter(Boolean)
-              .join('\n'),
-          },
-        ],
-        tools: buildTools(deps.permissions),
+        messages,
+        tools,
         toolChoice: { type: 'tool', name: 'apply_patches' },
         onThinking: (delta) => deps.emit({ type: 'thinking', delta }),
         onText: (delta) => deps.emit({ type: 'text', delta }),
       });
+      let call = turn.toolUses.find((t) => t.name === 'apply_patches');
 
-      const call = turn.toolUses.find((t) => t.name === 'apply_patches');
+      if (!call) {
+        // auto 模式下模型可能只回了文字；回放（去 thinking）后再要求一次
+        const retry = await deps.llm.runTurn({
+          system: buildSystemPrompt({ catalog: deps.catalog }),
+          messages: [
+            ...messages,
+            { role: 'assistant', content: replayAssistantContent(turn) },
+            {
+              role: 'user',
+              content:
+                '你上一条没有调用 apply_patches。请直接调用 apply_patches 产出页面改动，不要回复文字或调用其他工具。',
+            },
+          ],
+          tools,
+          toolChoice: { type: 'tool', name: 'apply_patches' },
+          onThinking: (delta) => deps.emit({ type: 'thinking', delta }),
+          onText: (delta) => deps.emit({ type: 'text', delta }),
+        });
+        call = retry.toolUses.find((t) => t.name === 'apply_patches');
+      }
+
       if (!call) throw new Error('模型没有产出任何页面改动');
       const input = call.input as { summary: string; patches: unknown[] };
 
