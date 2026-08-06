@@ -18,6 +18,7 @@ import {
   type DataSourceMap,
 } from './datasource';
 import { detectHost } from './host/browser';
+import { drawLottery, getOrCreateGuestId } from './api';
 import type { HostAdapter } from './host/types';
 
 export interface ToastItem {
@@ -205,8 +206,33 @@ export function RuntimeProvider({
           }
           return;
 
-        // 以下动作依赖 M3 的业务接口，先明确提示而不是静默失败
-        case 'lottery.draw':
+        // 抽奖：调服务端接口，把返回的下标写进 state，物料按它落停并 emit finish
+        case 'lottery.draw': {
+          if (editing) {
+            pushToast('预览态不执行抽奖', 'info', 2000);
+            return;
+          }
+          const activityId = dsl.meta.activityId;
+          const userId = (await host.login())?.userId ?? getOrCreateGuestId();
+          try {
+            const result = await drawLottery(activityId, userId);
+            if (result.won) {
+              commitPageState('prizeIndex', result.index);
+              commitPageState('prizeResult', result.prize);
+            } else {
+              // 未中奖：置 -1 让物料转满 timeout 后发 timeout，运营可绑「谢谢参与」提示
+              commitPageState('prizeIndex', -1);
+              commitPageState('prizeResult', null);
+            }
+          } catch (err) {
+            console.error('[nca] 抽奖失败', err);
+            pushToast(err instanceof Error ? err.message : '抽奖失败', 'error', 3000);
+            commitPageState('prizeIndex', -1);
+          }
+          return;
+        }
+
+        // 以下动作依赖 M3 的其它业务接口，先明确提示而不是静默失败
         case 'appointment':
         case 'form.submit':
         case 'component.trigger':

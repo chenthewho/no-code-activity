@@ -3,10 +3,9 @@ import type { FinalDsl } from '@nca/dsl';
 import { RendererSurface } from '../components/RendererSurface';
 import { loadDsl, parseDsl, preloadCriticalImages } from './loader';
 import { usePreviewChannel } from './preview-channel';
+import { API_BASE } from '../runtime/api';
 
 type Status = 'loading' | 'ready' | 'error';
-
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3100/api/v1';
 
 export function App() {
   const [status, setStatus] = useState<Status>('loading');

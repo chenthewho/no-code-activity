@@ -137,3 +137,36 @@ export const templateApi = {
     request<{ favorited: boolean }>(`/templates/${id}/favorite`, { method: 'POST' }),
   disable: (id: string) => request<void>(`/templates/${id}`, { method: 'DELETE' }),
 };
+
+export interface PrizeItem {
+  id: string;
+  activityId: string;
+  name: string;
+  image?: string;
+  /** 万分比，10000 表示 100% */
+  probability: number;
+  total: number;
+  remaining: number;
+  /** 单用户可中上限，0 不限 */
+  limitPerUser: number;
+  sort: number;
+  createdAt: string;
+}
+
+export interface PrizeInput {
+  name: string;
+  image?: string;
+  probability: number;
+  total: number;
+  limitPerUser: number;
+  sort: number;
+}
+
+export const prizeApi = {
+  list: (activityId: string) => request<PrizeItem[]>('/prizes', { query: { activityId } }),
+  create: (body: PrizeInput & { activityId: string }) =>
+    request<PrizeItem>('/prizes', { method: 'POST', body }),
+  update: (id: string, body: Partial<PrizeInput>) =>
+    request<PrizeItem>(`/prizes/${id}`, { method: 'PATCH', body }),
+  remove: (id: string) => request<void>(`/prizes/${id}`, { method: 'DELETE' }),
+};

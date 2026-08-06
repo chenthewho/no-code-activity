@@ -1,6 +1,7 @@
 import type { DataSource } from '@nca/dsl';
 import { evaluateBinding, type ExpressionContext } from './expression';
 import { resolveValue } from './props-parser';
+import { API_BASE } from './api';
 
 export interface DataSourceState {
   loading: boolean;
@@ -41,7 +42,9 @@ export async function fetchDataSource(
 
   try {
     const params = resolveValue(ds.params, ctx) as Record<string, unknown>;
-    const url = new URL(evaluateBinding(ds.url, ctx) as string, window.location.origin);
+    // 相对 URL（如 /runtime/activities/:id/prizes）基于 API_BASE 解析，
+    // 让数据源能打到 API 服务端而不是 renderer 自己的源
+    const url = new URL(evaluateBinding(ds.url, ctx) as string, API_BASE);
     if (ds.method === 'GET') {
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined && value !== null) url.searchParams.set(key, String(value));

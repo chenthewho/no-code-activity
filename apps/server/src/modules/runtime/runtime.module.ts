@@ -1,11 +1,15 @@
-import { Controller, Get, Injectable, Module, NotFoundException, Param } from '@nestjs/common';
+import { Body, Controller, Get, Injectable, Module, NotFoundException, Param, Post } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { finalDslSchema, manifestSchema, type FinalDsl, type Manifest } from '@nca/dsl';
 import { ACTIVITY_STATUS } from '@nca/shared';
 import { Public } from '../../common/decorators';
 import { markRaw } from '../../common/interceptors/transform.interceptor';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { drawSchema, type DrawDto } from '../prize/prize.dto';
+import { PrizeModule } from '../prize/prize.module';
+import { PrizeService } from '../prize/prize.service';
 
 /**
  * C 端运行时接口。
@@ -66,7 +70,10 @@ class RuntimeService {
 @ApiTags('runtime')
 @Controller('runtime/activities')
 class RuntimeController {
-  constructor(private readonly service: RuntimeService) {}
+  constructor(
+    private readonly service: RuntimeService,
+    private readonly prizeService: PrizeService,
+  ) {}
 
   @Public()
   @Get(':id/dsl')
@@ -82,10 +89,32 @@ class RuntimeController {
   async manifest(@Param('id') id: string) {
     return markRaw(await this.service.manifest(id));
   }
+
+  @Public()
+  @Get(':id/prizes')
+  @ApiOperation({ summary: '活动奖品列表（公开字段，供 ds_prizes 数据源）' })
+  async prizes(@Param('id') id: string) {
+    return markRaw(await this.prizeService.publicList(id));
+  }
+}
+
+/** C 端抽奖。独立于 activities 前缀，路径与开发计划中的 /runtime/lottery/draw 对齐 */
+@ApiTags('runtime')
+@Controller('runtime/lottery')
+class RuntimeLotteryController {
+  constructor(private readonly prizes: PrizeService) {}
+
+  @Public()
+  @Post('draw')
+  @ApiOperation({ summary: '抽奖：按概率选奖 + 原子扣减库存 + 落中奖记录' })
+  async draw(@Body(new ZodValidationPipe(drawSchema)) dto: DrawDto) {
+    return markRaw(await this.prizes.draw(dto.activityId, dto.userId));
+  }
 }
 
 @Module({
-  controllers: [RuntimeController],
+  imports: [PrizeModule],
+  controllers: [RuntimeController, RuntimeLotteryController],
   providers: [RuntimeService],
 })
 export class RuntimeModule {}

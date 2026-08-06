@@ -284,6 +284,12 @@ M2 期间通过真实使用暴露并修复的缺陷（都补了回归测试）�
 ② 表单提交与活动预约 → ③ 渠道链接与分享落地页 → ④ SSO 对接 →
 ⑤ 埋点上报与基础报表 → ⑥ COS STS 直传替换服务端中转。
 
+**① 已完成（2026-08-06）**：`PrizeModule`（admin CRUD + Redis 库存权威）、
+`GET /runtime/activities/:id/prizes`（公开列表）、`POST /runtime/lottery/draw`
+（Lua 原子选奖+扣减、limitPerUser、按天限流 100/人、无 Redis 降级进程内）。
+renderer 的 `lottery.draw` 动作已接入（写回 `state.prizeIndex`），admin 活动详情页
+新增「奖品配置」卡片。剩余：表单/预约、渠道、SSO、埋点报表、COS STS。
+
 ---
 
 ## 10. AI Agent 接入（本文之外的增量）

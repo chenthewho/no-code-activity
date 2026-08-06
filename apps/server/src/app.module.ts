@@ -10,6 +10,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { AssetModule } from './modules/asset/asset.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { MaterialModule } from './modules/material/material.module';
+import { PrizeModule } from './modules/prize/prize.module';
 import { RuntimeModule } from './modules/runtime/runtime.module';
 import { TemplateModule } from './modules/template/template.module';
 
@@ -27,6 +28,7 @@ import { TemplateModule } from './modules/template/template.module';
     AssetModule,
     TemplateModule,
     MaterialModule,
+    PrizeModule,
     RuntimeModule,
     AiModule,
   ],

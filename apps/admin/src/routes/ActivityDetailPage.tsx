@@ -7,6 +7,7 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { ACTIVITY_STATUS, PERMISSION } from '@nca/shared';
 import { activityApi, type VersionItem } from '../api';
 import { ImagePicker } from '../components/designer/ImagePicker';
+import { PrizeConfigCard } from '../components/PrizeConfigCard';
 import { useAuthStore } from '../stores/auth';
 
 const STATUS_META = {
@@ -208,6 +209,8 @@ export function ActivityDetailPage() {
       <Card title="发布历史">
         <Table rowKey="id" dataSource={versions} columns={columns} pagination={false} size="small" />
       </Card>
+
+      <PrizeConfigCard activityId={activityId} canEdit={can(PERMISSION.ACTIVITY_EDIT)} />
     </Space>
   );
 }
