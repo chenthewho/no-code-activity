@@ -37,10 +37,15 @@ const HARD_RULES = `
 取值必须是物料清单里列出的事件名。onLoad / onExpose / onChange 目前没有任何物料
 会触发，写了等于白写。
 
-## 这四个动作还没接入，绝对不要用
+## 这几个业务动作已经接入，按下面方式用
 
-\`lottery.draw\`、\`appointment\`、\`form.submit\`、\`component.trigger\`。
-线上点了只会弹「动作尚未接入」。抽奖要走「刷新数据源 → 把结果写进 state」那条路。
+- \`lottery.draw\`：绑定在 Lottery 物料的 draw 事件上。动作内部会调
+  \`/runtime/lottery/draw\` 并把中奖序号写回 \`state.prizeIndex\`，物料据此落停。
+  奖品列表用 \`ds_prizes\` 数据源喂给 Lottery 的 prizes 字段。
+- \`form.submit\`：绑定在 Form 物料的 submit 事件上，动作内部把表单值上报服务端。
+  需要 Form 物料时用它收集输入。
+- \`appointment\`：绑定在 Appointment 物料的 appointment 事件上，动作内部完成预约。
+- \`component.trigger\`：还没接入，绝对不要用。
 
 ## 表达式语法（\`{{ }}\`）
 
