@@ -19,6 +19,7 @@ import { RewardListMaterial } from './components/RewardList';
 import { InviteFriendMaterial } from './components/InviteFriend';
 import { InviteRecordMaterial } from './components/InviteRecord';
 import { FormMaterial } from './components/Form';
+import { AppointmentMaterial } from './components/Appointment';
 
 export * from './types';
 export * from './utils/style';
@@ -41,6 +42,7 @@ export { RewardListMaterial } from './components/RewardList';
 export { InviteFriendMaterial } from './components/InviteFriend';
 export { InviteRecordMaterial } from './components/InviteRecord';
 export { FormMaterial } from './components/Form';
+export { AppointmentMaterial } from './components/Appointment';
 
 export type { PageProps } from './components/Page';
 export type { ContainerProps } from './components/Container';
@@ -59,6 +61,7 @@ export type { RewardListProps } from './components/RewardList';
 export type { InviteFriendProps } from './components/InviteFriend';
 export type { InviteRecordProps } from './components/InviteRecord';
 export type { FormProps, FormField } from './components/Form';
+export type { AppointmentProps } from './components/Appointment';
 
 /**
  * 物料总表 —— 全平台唯一的物料来源。
@@ -84,6 +87,7 @@ export const materials: MaterialDefinition<any>[] = [
   InviteFriendMaterial,
   InviteRecordMaterial,
   FormMaterial,
+  AppointmentMaterial,
 ];
 
 export const materialMap: Record<string, MaterialDefinition> = Object.fromEntries(

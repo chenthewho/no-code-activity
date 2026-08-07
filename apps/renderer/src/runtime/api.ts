@@ -64,3 +64,28 @@ export async function submitForm(input: {
     throw new Error(text || `提交失败 (${response.status})`);
   }
 }
+
+export interface AppointmentResult {
+  booked: boolean;
+  /** 该用户此前已约过同一场次 */
+  already: boolean;
+}
+
+/** 活动预约：一人一场次一次，重复预约返回 already */
+export async function bookAppointment(input: {
+  activityId: string;
+  sceneId: string;
+  userId: string;
+  contact?: string;
+}): Promise<AppointmentResult> {
+  const response = await fetch(`${API_BASE}/runtime/appointment`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || `预约失败 (${response.status})`);
+  }
+  return (await response.json()) as AppointmentResult;
+}

@@ -22,6 +22,15 @@ const submitFormSchema = z.object({
 });
 type SubmitFormDto = z.infer<typeof submitFormSchema>;
 
+/** C 端活动预约：一人一场次只能约一次（表上 @@unique 兜底并发） */
+const appointmentSchema = z.object({
+  activityId: z.string().min(1),
+  sceneId: z.string().min(1),
+  userId: z.string().min(1),
+  contact: z.string().max(60).optional(),
+});
+type AppointmentDto = z.infer<typeof appointmentSchema>;
+
 /**
  * C 端运行时接口。
  *
@@ -89,6 +98,33 @@ class RuntimeService {
       },
     });
   }
+
+  /** 活动预约：一人一场次一次。并发下唯一约束兜底，重复预约返回 already */
+  async bookAppointment(dto: AppointmentDto) {
+    const where = {
+      activityId_sceneId_userId: {
+        activityId: dto.activityId,
+        sceneId: dto.sceneId,
+        userId: dto.userId,
+      },
+    };
+    const existing = await this.prisma.appointmentRecord.findUnique({ where });
+    if (existing) return { booked: true, already: true };
+    try {
+      await this.prisma.appointmentRecord.create({
+        data: {
+          activityId: dto.activityId,
+          sceneId: dto.sceneId,
+          userId: dto.userId,
+          contact: dto.contact ?? null,
+        },
+      });
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') return { booked: true, already: true };
+      throw err;
+    }
+    return { booked: true, already: false };
+  }
 }
 
 @ApiTags('runtime')
@@ -136,10 +172,10 @@ class RuntimeLotteryController {
   }
 }
 
-/** C 端表单提交 */
+/** C 端写操作：表单提交 / 活动预约 */
 @ApiTags('runtime')
 @Controller('runtime')
-class RuntimeFormsController {
+class RuntimeMutationController {
   constructor(private readonly service: RuntimeService) {}
 
   @Public()
@@ -148,11 +184,18 @@ class RuntimeFormsController {
   async submit(@Body(new ZodValidationPipe(submitFormSchema)) dto: SubmitFormDto, @Ip() ip?: string) {
     return markRaw(await this.service.submitForm(dto, ip));
   }
+
+  @Public()
+  @Post('appointment')
+  @ApiOperation({ summary: '活动预约：一人一场次一次，重复预约返回 already' })
+  async book(@Body(new ZodValidationPipe(appointmentSchema)) dto: AppointmentDto) {
+    return markRaw(await this.service.bookAppointment(dto));
+  }
 }
 
 @Module({
   imports: [PrizeModule],
-  controllers: [RuntimeController, RuntimeLotteryController, RuntimeFormsController],
+  controllers: [RuntimeController, RuntimeLotteryController, RuntimeMutationController],
   providers: [RuntimeService],
 })
 export class RuntimeModule {}

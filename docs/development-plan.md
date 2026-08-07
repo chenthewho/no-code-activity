@@ -288,7 +288,16 @@ M2 期间通过真实使用暴露并修复的缺陷（都补了回归测试）�
 `GET /runtime/activities/:id/prizes`（公开列表）、`POST /runtime/lottery/draw`
 （Lua 原子选奖+扣减、limitPerUser、按天限流 100/人、无 Redis 降级进程内）。
 renderer 的 `lottery.draw` 动作已接入（写回 `state.prizeIndex`），admin 活动详情页
-新增「奖品配置」卡片。剩余：表单/预约、渠道、SSO、埋点报表、COS STS。
+新增「奖品配置」卡片。
+
+**② 已完成（2026-08-07）**：表单提交 + 活动预约。
+- 表单：新增 `Form` 物料（字段 JSON 配置 + 必填/数字校验，提交 emit values）、
+  `POST /runtime/forms` 落 `form_submission`、renderer `form.submit` 动作。
+- 预约：新增 `appointment_record` 表（`@@unique(activityId, sceneId, userId)` 去重）、
+  `POST /runtime/appointment`（重复预约返回 already）、`Appointment` 物料 +
+  renderer `appointment` 动作。容量/时段配置留待扩展。
+
+剩余：③ 渠道链接、④ SSO、⑤ 埋点报表、⑥ COS STS。
 
 ---
 

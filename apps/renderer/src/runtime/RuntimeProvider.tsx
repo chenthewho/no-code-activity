@@ -18,7 +18,7 @@ import {
   type DataSourceMap,
 } from './datasource';
 import { detectHost } from './host/browser';
-import { drawLottery, getOrCreateGuestId, submitForm } from './api';
+import { drawLottery, getOrCreateGuestId, submitForm, bookAppointment } from './api';
 import type { HostAdapter } from './host/types';
 
 export interface ToastItem {
@@ -257,8 +257,34 @@ export function RuntimeProvider({
           return;
         }
 
-        // 以下动作依赖 M3 的其它业务接口，先明确提示而不是静默失败
-        case 'appointment':
+        // 活动预约：一人一场次一次。场次 id 优先取物料 payload，其次取动作配置
+        case 'appointment': {
+          if (editing) {
+            pushToast('预览态不预约', 'info', 2000);
+            return;
+          }
+          const payload = (ctx.payload as { sceneId?: string }) ?? {};
+          const sceneId = payload.sceneId || action.sceneId;
+          if (!sceneId) {
+            pushToast('缺少场次 sceneId，请检查绑定', 'warning', 3000);
+            return;
+          }
+          const activityId = dsl.meta.activityId;
+          const userId = (await host.login())?.userId ?? getOrCreateGuestId();
+          try {
+            const result = await bookAppointment({ activityId, sceneId, userId });
+            pushToast(
+              result.already ? '你已预约过该场次' : '预约成功',
+              result.already ? 'warning' : 'success',
+              2500,
+            );
+          } catch (err) {
+            console.error('[nca] 预约失败', err);
+            pushToast(err instanceof Error ? err.message : '预约失败', 'error', 3000);
+          }
+          return;
+        }
+
         case 'component.trigger':
           pushToast(`动作「${action.type}」尚未接入`, 'warning', 2000);
           return;

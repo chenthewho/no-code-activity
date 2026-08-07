@@ -338,11 +338,11 @@ LangGraph 官方只提供 SQLite / Postgres / Redis 三种实现，本项目是 
 1. **`build` 节点只让模型出一轮补丁**（`tool_choice` 强制 `apply_patches`），
    没有做「模型看到校验报错后自己改」的回环。目前靠 prompt 里的硬约束 +
    跳过并记账兜住，复杂页面可能有若干条补丁不生效，会在卡片上列出来。
-2. **三个动作仍未接入**（`appointment` / `form.submit` / `component.trigger`）。
-   `lottery.draw` 已于 2026-08-06 接入：走 `POST /runtime/lottery/draw`
-   （PrizeModule，Redis Lua 原子扣减 + limitPerUser + 按天限流），renderer 动作
-   把返回的下标写回 `state.prizeIndex` 让物料落停。其余三个仍是占位 toast，
-   已写进 prompt 黑名单，服务端没有做二次拦截。
+2. **仅剩 `component.trigger` 动作未接入**。`lottery.draw`（2026-08-06，
+   走 `POST /runtime/lottery/draw`，Redis Lua 原子扣减）、`appointment` 与
+   `form.submit`（2026-08-07，走 `/runtime/appointment`、`/runtime/forms`）均已接入；
+   只有向指定组件派发事件的 `component.trigger` 仍是占位 toast，已写进 prompt
+   黑名单，服务端没有做二次拦截。
 3. **`computed` 数据源只在挂载时算一次**，不随 state 变化。AI 不能用它做派生值。
 4. **未接 `fallbacks` 参数**。Opus 5 的安全分类器可能拒答（`stop_reason: refusal`），
    当前只是如实报错给运营，没有自动回落到 Opus 4.8。要开的话在

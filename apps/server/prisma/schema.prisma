@@ -382,3 +382,22 @@ model AiCheckpointWrite {
   @@index([threadId, checkpointNs, checkpointId])
   @@map("ai_checkpoint_write")
 }
+
+/**
+ * 活动预约记录。一个用户对一个场次只能预约一次（@@unique 兜底并发），
+ * 防止重复刷。capacity / 时段等配置后续按需扩展，v1 只做「预约上/已预约过」。
+ */
+model AppointmentRecord {
+  id         String   @id @default(cuid())
+  activityId String
+  sceneId    String
+  userId     String
+  /// 预约时留的联系方式（手机号等），可选
+  contact    String?
+  status     String   @default("confirmed") // confirmed / cancelled
+  createdAt  DateTime @default(now())
+
+  @@unique([activityId, sceneId, userId])
+  @@index([activityId, createdAt])
+  @@map("appointment_record")
+}
