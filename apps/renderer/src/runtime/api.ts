@@ -46,3 +46,21 @@ export async function drawLottery(activityId: string, userId: string): Promise<D
   }
   return (await response.json()) as DrawResult;
 }
+
+/** 表单提交：把 Form 物料收集的字段值上报到 POST /runtime/forms */
+export async function submitForm(input: {
+  activityId: string;
+  formNodeId: string;
+  userId?: string;
+  data: Record<string, unknown>;
+}): Promise<void> {
+  const response = await fetch(`${API_BASE}/runtime/forms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || `提交失败 (${response.status})`);
+  }
+}

@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Injectable, Module, NotFoundException, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Injectable, Ip, Module, NotFoundException, Param, Post } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 import { finalDslSchema, manifestSchema, type FinalDsl, type Manifest } from '@nca/dsl';
 import { ACTIVITY_STATUS } from '@nca/shared';
 import { Public } from '../../common/decorators';
@@ -10,6 +12,15 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { drawSchema, type DrawDto } from '../prize/prize.dto';
 import { PrizeModule } from '../prize/prize.module';
 import { PrizeService } from '../prize/prize.service';
+
+/** C 端表单提交：data 是任意字段表，运营在 Form 物料里配置 */
+const submitFormSchema = z.object({
+  activityId: z.string().min(1),
+  formNodeId: z.string().min(1),
+  userId: z.string().optional(),
+  data: z.record(z.string(), z.unknown()),
+});
+type SubmitFormDto = z.infer<typeof submitFormSchema>;
 
 /**
  * C 端运行时接口。
@@ -65,6 +76,19 @@ class RuntimeService {
     const version = await this.currentVersion(activityId);
     return finalDslSchema.parse(version.dsl);
   }
+
+  /** 表单提交：原样落 FormSubmission，userId 有则记（SSO 前是访客 id） */
+  async submitForm(dto: SubmitFormDto, ip?: string) {
+    return this.prisma.formSubmission.create({
+      data: {
+        activityId: dto.activityId,
+        formNodeId: dto.formNodeId,
+        userId: dto.userId ?? null,
+        data: dto.data as Prisma.InputJsonValue,
+        ip: ip ?? null,
+      },
+    });
+  }
 }
 
 @ApiTags('runtime')
@@ -112,9 +136,23 @@ class RuntimeLotteryController {
   }
 }
 
+/** C 端表单提交 */
+@ApiTags('runtime')
+@Controller('runtime')
+class RuntimeFormsController {
+  constructor(private readonly service: RuntimeService) {}
+
+  @Public()
+  @Post('forms')
+  @ApiOperation({ summary: '表单提交：写入 FormSubmission' })
+  async submit(@Body(new ZodValidationPipe(submitFormSchema)) dto: SubmitFormDto, @Ip() ip?: string) {
+    return markRaw(await this.service.submitForm(dto, ip));
+  }
+}
+
 @Module({
   imports: [PrizeModule],
-  controllers: [RuntimeController, RuntimeLotteryController],
+  controllers: [RuntimeController, RuntimeLotteryController, RuntimeFormsController],
   providers: [RuntimeService],
 })
 export class RuntimeModule {}

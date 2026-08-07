@@ -18,7 +18,7 @@ import {
   type DataSourceMap,
 } from './datasource';
 import { detectHost } from './host/browser';
-import { drawLottery, getOrCreateGuestId } from './api';
+import { drawLottery, getOrCreateGuestId, submitForm } from './api';
 import type { HostAdapter } from './host/types';
 
 export interface ToastItem {
@@ -232,9 +232,33 @@ export function RuntimeProvider({
           return;
         }
 
+        // 表单提交：Form 物料在 submit 事件里把 { values } 带进 payload，
+        // 这里取出来上报，成功/失败用 toast 提示运营
+        case 'form.submit': {
+          if (editing) {
+            pushToast('预览态不提交表单', 'info', 2000);
+            return;
+          }
+          const formNodeId = resolveValue(action.formNodeId, ctx) as string;
+          const values = (ctx.payload as { values?: Record<string, unknown> })?.values;
+          if (!formNodeId || !values) {
+            pushToast('表单数据不完整，请检查事件绑定', 'warning', 3000);
+            return;
+          }
+          const activityId = dsl.meta.activityId;
+          const userId = (await host.login())?.userId ?? getOrCreateGuestId();
+          try {
+            await submitForm({ activityId, formNodeId, userId, data: values });
+            pushToast('提交成功', 'success', 2500);
+          } catch (err) {
+            console.error('[nca] 表单提交失败', err);
+            pushToast(err instanceof Error ? err.message : '提交失败', 'error', 3000);
+          }
+          return;
+        }
+
         // 以下动作依赖 M3 的其它业务接口，先明确提示而不是静默失败
         case 'appointment':
-        case 'form.submit':
         case 'component.trigger':
           pushToast(`动作「${action.type}」尚未接入`, 'warning', 2000);
           return;
