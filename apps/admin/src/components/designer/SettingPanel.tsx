@@ -18,6 +18,7 @@ import type { JsonValue, MaterialMeta, PropSchemaItem } from '@nca/dsl';
 import { useDesignerStore } from '../../stores/designer';
 import { EventPanel } from './EventPanel';
 import { ControlPanel } from './ControlPanel';
+import { SlotEditor } from './SlotEditor';
 import { ImagePicker } from './ImagePicker';
 import { PREVIEW_MESSAGE } from './PreviewFrame';
 import { SpacingEditor } from './SpacingEditor';
@@ -165,6 +166,7 @@ export function SettingPanel({ metas }: SettingPanelProps) {
                   },
                 ]}
               />
+              <SlotEditor />
             </div>
           ),
         },

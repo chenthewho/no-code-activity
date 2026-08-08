@@ -267,6 +267,12 @@ condition/loop 结构容器配置、画布交互层（点选/悬停描边/拖拽
 资源上传与图片选择器、模板中心（搜索/分类/收藏/预览/从模板创建/下架）、
 活动基础信息编辑，以及按设计稿的 antd 界面重构。
 
+**slot 具名插槽容器（M2 三容器最后一个，2026-08-08 补齐）**：
+- renderer `CanvasRenderer` 按物料 `meta.slots` 渲染 `node.linkedNodes`，注入 `slotContent` prop。
+- 新增 `Card` 物料（header/body/footer 三插槽，body 可回退普通子节点）。
+- 设计器：`addToSlot` 动作（替换同名插槽）、NodeTree 展示 slot 子节点、设置面板
+  `SlotEditor`（往各插槽选物料填入/移除）；removeNode/relocateNode 同步清理 linkedNodes 引用。
+
 M2 期间通过真实使用暴露并修复的缺陷（都补了回归测试）：
 
 | 缺陷 | 影响 | 根因 |

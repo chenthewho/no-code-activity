@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Space, Tree } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { ROOT_NODE_ID } from '@nca/shared';
+import { getMaterial } from '@nca/materials';
 import { useDesignerStore } from '../../stores/designer';
 
 /** 节点树：画布之外的第二条选中路径，绝对定位或被遮挡的节点靠它才选得中 */
@@ -24,6 +25,18 @@ export function NodeTree() {
     const node = dsl.craftJson[nodeId];
     if (!node) return null;
     const children = node.nodes.map(build).filter(Boolean) as DataNode[];
+
+    // 具名插槽内容：直接挂在容器下，标题带 [slot] 前缀标识归属
+    const material = getMaterial(node.type.resolvedName);
+    for (const slot of material?.meta.slots ?? []) {
+      const slotNodeId = node.linkedNodes?.[slot];
+      if (!slotNodeId) continue;
+      const child = build(slotNodeId);
+      if (child) {
+        children.push({ ...child, title: `[${slot}] ${child.title}` });
+      }
+    }
+
     return {
       key: nodeId,
       title: node.displayName ?? node.type.resolvedName,

@@ -12,6 +12,8 @@ export interface MaterialInjectedProps {
   children?: ReactNode;
   /** 当前节点 id */
   nodeId?: string;
+  /** 具名插槽内容：slotName → 挂进该插槽的子节点（来自 craftNode.linkedNodes） */
+  slotContent?: Record<string, ReactNode>;
   /** 抛出自定义事件给 EventBinder，事件名需在 meta.events 中声明过 */
   emit?: (event: string, payload?: Record<string, unknown>) => void;
   /** 设计器编辑态：物料据此关闭跳转、自动播放等副作用 */

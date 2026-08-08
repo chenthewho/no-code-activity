@@ -4,6 +4,7 @@ import type { MaterialDefinition } from './types';
 
 import { PageMaterial } from './components/Page';
 import { ContainerMaterial } from './components/Container';
+import { CardMaterial } from './components/Card';
 import { TextMaterial } from './components/Text';
 import { ImageMaterial } from './components/Image';
 import { ButtonMaterial } from './components/Button';
@@ -27,6 +28,7 @@ export * from './utils/schema';
 
 export { PageMaterial } from './components/Page';
 export { ContainerMaterial } from './components/Container';
+export { CardMaterial } from './components/Card';
 export { TextMaterial } from './components/Text';
 export { ImageMaterial } from './components/Image';
 export { ButtonMaterial } from './components/Button';
@@ -46,6 +48,7 @@ export { AppointmentMaterial } from './components/Appointment';
 
 export type { PageProps } from './components/Page';
 export type { ContainerProps } from './components/Container';
+export type { CardProps } from './components/Card';
 export type { TextProps } from './components/Text';
 export type { ImageProps } from './components/Image';
 export type { ButtonProps } from './components/Button';
@@ -72,6 +75,7 @@ export type { AppointmentProps } from './components/Appointment';
 export const materials: MaterialDefinition<any>[] = [
   PageMaterial,
   ContainerMaterial,
+  CardMaterial,
   TextMaterial,
   ImageMaterial,
   ButtonMaterial,

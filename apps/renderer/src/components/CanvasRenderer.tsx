@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { CraftNode } from '@nca/dsl';
-import { componentMap } from '@nca/materials';
+import { componentMap, getMaterial } from '@nca/materials';
 import { ROOT_NODE_ID } from '@nca/shared';
 import { evaluateBinding } from '../runtime/expression';
 import { resolveCondition, resolveProps } from '../runtime/props-parser';
@@ -75,7 +75,7 @@ function SingleNode({
   node: CraftNode;
   skipLoop?: boolean;
 }) {
-  const { buildContext, emit, editing, openModals } = useRuntime();
+  const { dsl, buildContext, emit, editing, openModals } = useRuntime();
   const scope = useContext(ScopeContext);
   const ctx = buildContext(scope);
 
@@ -100,6 +100,17 @@ function SingleNode({
       ? node.nodes.map((childId) => <NodeRenderer key={childId} nodeId={childId} />)
       : undefined;
 
+  // 具名插槽：物料声明了哪些 slot，就把 linkedNodes 里挂进去的子节点渲染出来，
+  // 以 slotContent 命名空间交给物料自行摆放
+  const slotContent: Record<string, ReactNode> = {};
+  const material = getMaterial(node.type.resolvedName);
+  for (const slot of material?.meta.slots ?? []) {
+    const slotNodeId = node.linkedNodes?.[slot];
+    if (slotNodeId && dsl.craftJson[slotNodeId]) {
+      slotContent[slot] = <NodeRenderer key={slotNodeId} nodeId={slotNodeId} />;
+    }
+  }
+
   const rendered = (
     <Component
       {...props}
@@ -107,6 +118,7 @@ function SingleNode({
       nodeId={nodeId}
       editing={editing}
       emit={(event: string, payload?: Record<string, unknown>) => emit(nodeId, event, payload)}
+      slotContent={Object.keys(slotContent).length > 0 ? slotContent : undefined}
     >
       {children}
     </Component>

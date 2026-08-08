@@ -91,6 +91,13 @@ interface DesignerState {
     parentId: string,
     index: number,
   ) => void;
+  /** 往具名插槽挂内容：替换同名插槽已有节点 */
+  addToSlot: (
+    ownerId: string,
+    slotName: string,
+    materialName: string,
+    defaultProps?: Record<string, JsonValue>,
+  ) => void;
 
   // 事件编排
   addEvent: (nodeId: string, trigger: EventBinding['trigger'], customEvent?: string) => void;
@@ -256,19 +263,26 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     const state = get();
     if (nodeId === ROOT_NODE_ID) return;
 
-    // 连子树一起删，否则会留下一堆孤儿节点，发布时才被校验拦下
+    // 连子树一起删（含具名插槽子节点），否则会留下一堆孤儿节点，发布时才被校验拦下
     const toDelete = new Set<string>();
     const walk = (id: string) => {
+      if (toDelete.has(id)) return;
       toDelete.add(id);
-      state.dsl.craftJson[id]?.nodes.forEach(walk);
+      const n = state.dsl.craftJson[id];
+      n?.nodes.forEach(walk);
+      Object.values(n?.linkedNodes ?? {}).forEach(walk);
     };
     walk(nodeId);
 
     const craftJson = { ...state.dsl.craftJson };
     for (const id of toDelete) delete craftJson[id];
     for (const [id, node] of Object.entries(craftJson)) {
-      if (node.nodes.some((child) => toDelete.has(child))) {
-        craftJson[id] = { ...node, nodes: node.nodes.filter((child) => !toDelete.has(child)) };
+      const nodes = node.nodes.filter((child) => !toDelete.has(child));
+      const linkedNodes = Object.fromEntries(
+        Object.entries(node.linkedNodes ?? {}).filter(([, value]) => !toDelete.has(value)),
+      );
+      if (nodes.length !== node.nodes.length || Object.keys(linkedNodes).length !== Object.keys(node.linkedNodes ?? {}).length) {
+        craftJson[id] = { ...node, nodes, linkedNodes };
       }
     }
 
@@ -325,9 +339,14 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
 
     const oldParent = craftJson[oldParentId];
     if (oldParent) {
+      // 节点可能挂在旧父的 nodes 里，也可能挂在某个具名插槽（linkedNodes）里，两处都要摘
+      const linkedNodes = Object.fromEntries(
+        Object.entries(oldParent.linkedNodes ?? {}).filter(([, value]) => value !== nodeId),
+      );
       craftJson[oldParentId] = {
         ...oldParent,
         nodes: oldParent.nodes.filter((id) => id !== nodeId),
+        linkedNodes,
       };
     }
 
@@ -381,6 +400,38 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
       actions: [],
     };
     set(commit(state, { ...state.dsl, events: [...state.dsl.events, binding] }));
+  },
+
+  addToSlot(ownerId, slotName, materialName, defaultProps = {}) {
+    const state = get();
+    const owner = state.dsl.craftJson[ownerId];
+    if (!owner) return;
+
+    const craftJson = { ...state.dsl.craftJson };
+    // 替换同名插槽已有内容：先清掉旧节点（它在 craftJson 里是独立的一条）
+    const oldChildId = owner.linkedNodes?.[slotName];
+    if (oldChildId && craftJson[oldChildId]) {
+      delete craftJson[oldChildId];
+    }
+
+    const nodeId = createId(materialName.toLowerCase());
+    craftJson[nodeId] = {
+      type: { resolvedName: materialName },
+      isCanvas: false,
+      props: { ...defaultProps },
+      custom: {},
+      hidden: false,
+      nodes: [],
+      linkedNodes: {},
+      parent: ownerId,
+    };
+    craftJson[ownerId] = {
+      ...owner,
+      linkedNodes: { ...(owner.linkedNodes ?? {}), [slotName]: nodeId },
+    };
+
+    const next: FinalDsl = { ...state.dsl, craftJson };
+    set({ ...commit(state, next), selectedId: nodeId });
   },
 
   updateEvent(eventId, patch) {
