@@ -24,11 +24,16 @@ export default defineConfig({
   // 而不是悄悄漂到别的端口让画布空白
   server: { port: 5180, strictPort: true },
   build: {
-    // 活动页体积敏感：产物带 hash，便于 manifest.entry 引用与长缓存
+    // 活动页体积敏感：产物带 hash，便于 manifest.entry 引用与长缓存。
+    // React 全家桶拆成独立 chunk——换物料/改业务不重下框架，也摊薄首包。
     rollupOptions: {
       output: {
         entryFileNames: 'renderer.[hash].js',
+        chunkFileNames: 'chunk-[name].[hash].js',
         assetFileNames: 'renderer.[hash][extname]',
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+        },
       },
     },
   },

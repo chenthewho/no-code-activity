@@ -4,6 +4,7 @@ import { RendererSurface } from '../components/RendererSurface';
 import { loadDsl, parseDsl, preloadCriticalImages } from './loader';
 import { usePreviewChannel } from './preview-channel';
 import { API_BASE } from '../runtime/api';
+import { BootSkeleton } from '../components/BootSkeleton';
 
 type Status = 'loading' | 'ready' | 'error';
 
@@ -56,7 +57,7 @@ export function App() {
   }, [preview.isPreview]);
 
   if (status === 'loading') {
-    return <div className="nca-boot">加载中…</div>;
+    return <BootSkeleton />;
   }
   if (status === 'error' || !dsl) {
     return (
