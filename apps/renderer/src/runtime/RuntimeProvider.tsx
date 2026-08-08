@@ -80,6 +80,8 @@ export function RuntimeProvider({
   const [openModals, setOpenModals] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastSeq = useRef(0);
+  // runAction 先于 emit 定义，component.trigger 又要调 emit——用 ref 绕开循环依赖
+  const emitRef = useRef<(nodeId: string, event: string, payload?: Record<string, unknown>) => void>(() => {});
 
   const query = useMemo(() => {
     if (typeof window === 'undefined') return {};
@@ -292,9 +294,17 @@ export function RuntimeProvider({
           return;
         }
 
-        case 'component.trigger':
-          pushToast(`动作「${action.type}」尚未接入`, 'warning', 2000);
+        // 向指定节点派发自定义事件：触发该节点上绑定的 onCustom/onX 动作，
+        // 用于「点 A 按钮去动 B 组件」这类跨组件编排
+        case 'component.trigger': {
+          const targetId = resolveValue(action.nodeId, ctx) as string;
+          if (!targetId) {
+            pushToast('缺少目标节点 nodeId，请检查绑定', 'warning', 3000);
+            return;
+          }
+          emitRef.current?.(targetId, action.event, action.payload ? { ...action.payload } : undefined);
           return;
+        }
 
         default:
           return;
@@ -331,6 +341,8 @@ export function RuntimeProvider({
     },
     [closeModal, dsl.craftJson, dsl.events, editing, runAction],
   );
+  // emit 就绪后回填到 ref，component.trigger 才能派发到任意节点
+  emitRef.current = emit;
 
   // 埋点初始化 + 页面曝光（PV）。只在真实浏览（非编辑预览）时记。
   useEffect(() => {

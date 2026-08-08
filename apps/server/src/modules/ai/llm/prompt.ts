@@ -45,7 +45,8 @@ const HARD_RULES = `
 - \`form.submit\`：绑定在 Form 物料的 submit 事件上，动作内部把表单值上报服务端。
   需要 Form 物料时用它收集输入。
 - \`appointment\`：绑定在 Appointment 物料的 appointment 事件上，动作内部完成预约。
-- \`component.trigger\`：还没接入，绝对不要用。
+- \`component.trigger\`：向指定节点派发自定义事件。nodeId 指向目标组件，event 是
+  目标组件上配过 onCustom 的自定义事件名。典型场景：点「开始」按钮去触发抽奖。
 
 ## 表达式语法（\`{{ }}\`）
 
