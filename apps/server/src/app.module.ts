@@ -7,6 +7,7 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { ActivityModule } from './modules/activity/activity.module';
 import { AiModule } from './modules/ai/ai.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AssetModule } from './modules/asset/asset.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ChannelModule } from './modules/channel/channel.module';
@@ -26,6 +27,7 @@ import { TemplateModule } from './modules/template/template.module';
     RedisModule,
     AuthModule,
     ActivityModule,
+    AnalyticsModule,
     AssetModule,
     ChannelModule,
     TemplateModule,

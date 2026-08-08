@@ -19,6 +19,8 @@ import {
 } from './datasource';
 import { detectHost } from './host/browser';
 import { drawLottery, getOrCreateGuestId, submitForm, bookAppointment } from './api';
+import { initAnalytics, trackAnalytics } from './analytics';
+import { ROOT_NODE_ID } from '@nca/shared';
 import type { HostAdapter } from './host/types';
 
 export interface ToastItem {
@@ -219,6 +221,7 @@ export function RuntimeProvider({
             if (result.won) {
               commitPageState('prizeIndex', result.index);
               commitPageState('prizeResult', result.prize);
+              trackAnalytics('convert', (ctx as { nodeId?: string }).nodeId, { type: 'lottery' });
             } else {
               // 未中奖：置 -1 让物料转满 timeout 后发 timeout，运营可绑「谢谢参与」提示
               commitPageState('prizeIndex', -1);
@@ -249,6 +252,7 @@ export function RuntimeProvider({
           const userId = (await host.login())?.userId ?? getOrCreateGuestId();
           try {
             await submitForm({ activityId, formNodeId, userId, data: values });
+            trackAnalytics('convert', (ctx as { nodeId?: string }).nodeId, { type: 'form' });
             pushToast('提交成功', 'success', 2500);
           } catch (err) {
             console.error('[nca] 表单提交失败', err);
@@ -273,6 +277,9 @@ export function RuntimeProvider({
           const userId = (await host.login())?.userId ?? getOrCreateGuestId();
           try {
             const result = await bookAppointment({ activityId, sceneId, userId });
+            if (!result.already) {
+              trackAnalytics('convert', (ctx as { nodeId?: string }).nodeId, { type: 'appointment' });
+            }
             pushToast(
               result.already ? '你已预约过该场次' : '预约成功',
               result.already ? 'warning' : 'success',
@@ -298,6 +305,9 @@ export function RuntimeProvider({
 
   const emit = useCallback(
     (nodeId: string, event: string, payload?: Record<string, unknown>) => {
+      // 埋点：点击事件计入点击（编辑态不记）
+      if (!editing && event === 'click') trackAnalytics('click', nodeId);
+
       // 弹窗关闭是物料内建行为，即使没配事件也要生效
       if (event === 'close' && dsl.craftJson[nodeId]?.type.resolvedName === 'Modal') {
         closeModal(nodeId);
@@ -313,13 +323,22 @@ export function RuntimeProvider({
         void (async () => {
           // 动作按声明顺序串行，「关弹窗 → 弹提示」这类编排才有确定次序
           for (const action of binding.actions) {
-            await runAction(action, payload ? { payload } : undefined);
+            // nodeId 随 scope 进动作上下文，供转化埋点知道是哪个组件
+            await runAction(action, { payload, nodeId });
           }
         })();
       }
     },
-    [closeModal, dsl.craftJson, dsl.events, runAction],
+    [closeModal, dsl.craftJson, dsl.events, editing, runAction],
   );
+
+  // 埋点初始化 + 页面曝光（PV）。只在真实浏览（非编辑预览）时记。
+  useEffect(() => {
+    const id = dsl.meta.activityId;
+    if (!id || editing) return;
+    initAnalytics(id);
+    trackAnalytics('expose', ROOT_NODE_ID);
+  }, [dsl.meta.activityId, editing]);
 
   // 自动加载数据源；轮询数据源按各自间隔独立计时
   useEffect(() => {

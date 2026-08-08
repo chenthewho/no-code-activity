@@ -304,7 +304,16 @@ renderer 的 `lottery.draw` 动作已接入（写回 `state.prizeIndex`），adm
 - 落地页能力原生就绪：renderer 表达式上下文已有 `query`，运营用 `{{ query.ch }}` 做渠道差异化展示；
   browser host 的分享带当前 URL（含渠道参），渠道可自然传播。
 
-剩余：④ SSO、⑤ 埋点报表、⑥ COS STS。
+**⑤ 已完成（2026-08-08）**：埋点上报与基础报表。
+- `AnalyticsModule`：`POST /analytics/events`（批量 ≤100 条、按 IP 每分钟限流、UA 识别
+  wechat/mobile/desktop、带渠道归因）；`GET /analytics/report`（PV/点击/转化 + 点击 Top 节点 +
+  近 7 天 PV 趋势，运营报表需 activity:view）。
+- renderer `analytics.ts`：合批上报（攒 20 条或 3 秒空闲，卸载 sendBeacon 兜底）；PV 曝光、
+  点击（emit 拦截）、转化（抽奖中奖/表单提交/预约成功）三处埋点，带 `?ch=` 渠道归因。
+- admin 活动详情页新增「数据报表」卡片（PV/点击/转化统计 + Top 节点 + 每日 PV 列表）。
+- 逐节点曝光（IntersectionObserver + DOM 打标）留作后续，v1 是页面级 PV。
+
+剩余：④ SSO、⑥ COS STS。
 
 ---
 

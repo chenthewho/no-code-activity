@@ -194,3 +194,17 @@ export const channelApi = {
     request<ChannelItem>('/channels', { method: 'POST', body }),
   remove: (id: string) => request<void>(`/channels/${id}`, { method: 'DELETE' }),
 };
+
+export interface AnalyticsReport {
+  total: number;
+  pageViews: number;
+  clicks: number;
+  converts: number;
+  byNode: { nodeId: string; clicks: number }[];
+  trend: { date: string; pageViews: number }[];
+}
+
+export const analyticsApi = {
+  report: (activityId: string, days = 7) =>
+    request<AnalyticsReport>('/analytics/report', { query: { activityId, days: String(days) } }),
+};
