@@ -101,9 +101,11 @@ export function RuntimeProvider({
       dataSource: toExpressionData(ctxRef.current.dataSources),
       meta: dsl.meta,
       query,
+      // 宿主标识：同一 DSL 可在不同宿主上按 {{ host === 'sdk_portrait' }} 分支
+      host: host.type,
       ...scope,
     }),
-    [dsl.meta, query],
+    [dsl.meta, host, query],
   );
 
   const pushToast = useCallback((message: string, level: ToastItem['level'], duration: number) => {

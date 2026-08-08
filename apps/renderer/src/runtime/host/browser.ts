@@ -1,5 +1,6 @@
-import { HOST_TYPE } from '@nca/shared';
+import { HOST_TYPE, type HostType } from '@nca/shared';
 import type { HostAdapter } from './types';
+import { createBridgeHost } from './bridge';
 
 /** 浏览器宿主：能力最少的基线实现，其它宿主在此之上补 SDK 桥接 */
 export const browserHost: HostAdapter = {
@@ -41,7 +42,29 @@ export const browserHost: HostAdapter = {
   },
 };
 
+/** 需要走宿主桥接的宿主类型；其余回落 browser */
+const BRIDGE_HOSTS: HostType[] = [
+  HOST_TYPE.GAME_CENTER,
+  HOST_TYPE.LDQ_PC,
+  HOST_TYPE.LDQ_APP,
+  HOST_TYPE.SDK_LANDSCAPE,
+  HOST_TYPE.SDK_PORTRAIT,
+  HOST_TYPE.WECHAT_MINI_PROGRAM,
+];
+
 export function detectHost(): HostAdapter {
-  // M4 接入其它宿主时在这里按 UA / 注入的全局标识分流
+  // 宿主容器注入的全局标识优先级最高；其次 ?host= 便于开发预览指定宿主。
+  // UA 嗅探不可靠（微信 H5 与小程序 web-view 的 UA 一样），不做。
+  const injected =
+    typeof window !== 'undefined' ? (window as unknown as { __NCA_HOST__?: HostType }).__NCA_HOST__ : undefined;
+  const urlHost =
+    typeof window !== 'undefined'
+      ? (new URLSearchParams(window.location.search).get('host') as HostType | null)
+      : null;
+  const type = injected ?? urlHost ?? undefined;
+
+  if (type && BRIDGE_HOSTS.includes(type)) {
+    return createBridgeHost(type);
+  }
   return browserHost;
 }

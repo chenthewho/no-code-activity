@@ -50,8 +50,8 @@ const HARD_RULES = `
 
 ## 表达式语法（\`{{ }}\`）
 
-可用命名空间只有四个：\`state\`、\`dataSource\`、\`meta\`、\`query\`；
-循环子树里额外有 \`item\` / \`index\`；http 数据源的 transform 里有 \`response\`。
+可用命名空间：\`state\`、\`dataSource\`、\`meta\`、\`query\`、\`host\`（\`{{ host === 'sdk_portrait' }}\`
+可做多宿主差异化展示）；循环子树里额外有 \`item\` / \`index\`；http 数据源的 transform 里有 \`response\`。
 
 支持：成员访问、下标、字面量、\`! - +\`、\`+ - * / %\`、比较、\`== != === !==\`、
 \`&& || ??\`、三元、括号、\`.length\`。
