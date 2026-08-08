@@ -8,6 +8,7 @@ import { ACTIVITY_STATUS, PERMISSION } from '@nca/shared';
 import { activityApi, type VersionItem } from '../api';
 import { ImagePicker } from '../components/designer/ImagePicker';
 import { PrizeConfigCard } from '../components/PrizeConfigCard';
+import { ChannelConfigCard } from '../components/ChannelConfigCard';
 import { useAuthStore } from '../stores/auth';
 
 const STATUS_META = {
@@ -211,6 +212,8 @@ export function ActivityDetailPage() {
       </Card>
 
       <PrizeConfigCard activityId={activityId} canEdit={can(PERMISSION.ACTIVITY_EDIT)} />
+
+      <ChannelConfigCard activityId={activityId} canEdit={can(PERMISSION.ACTIVITY_EDIT)} />
     </Space>
   );
 }

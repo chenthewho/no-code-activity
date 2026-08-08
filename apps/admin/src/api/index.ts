@@ -170,3 +170,27 @@ export const prizeApi = {
     request<PrizeItem>(`/prizes/${id}`, { method: 'PATCH', body }),
   remove: (id: string) => request<void>(`/prizes/${id}`, { method: 'DELETE' }),
 };
+
+export interface ChannelItem {
+  id: string;
+  activityId: string;
+  name: string;
+  code: string;
+  params?: Record<string, string | number | boolean>;
+  /** 生成的渠道落地链接 */
+  link: string;
+  createdAt: string;
+}
+
+export interface ChannelInput {
+  name: string;
+  code: string;
+  params?: Record<string, string | number | boolean>;
+}
+
+export const channelApi = {
+  list: (activityId: string) => request<ChannelItem[]>('/channels', { query: { activityId } }),
+  create: (body: ChannelInput & { activityId: string }) =>
+    request<ChannelItem>('/channels', { method: 'POST', body }),
+  remove: (id: string) => request<void>(`/channels/${id}`, { method: 'DELETE' }),
+};

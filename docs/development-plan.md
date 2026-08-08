@@ -297,7 +297,14 @@ renderer 的 `lottery.draw` 动作已接入（写回 `state.prizeIndex`），adm
   `POST /runtime/appointment`（重复预约返回 already）、`Appointment` 物料 +
   renderer `appointment` 动作。容量/时段配置留待扩展。
 
-剩余：③ 渠道链接、④ SSO、⑤ 埋点报表、⑥ COS STS。
+**③ 已完成（2026-08-07）**：渠道链接与分享落地页。
+- `ChannelModule`：`GET/POST/DELETE /channels`，链接 = `ACTIVITY_BASE_URL/act/:id?ch=<code>&<params>`
+  （复用 `buildActivityUrl`），同一活动渠道码唯一，重复返回 400。
+- admin 活动详情页新增「渠道链接」卡片：建渠道（名称/码/透传参数 JSON）+ 一键复制链接 + 删除。
+- 落地页能力原生就绪：renderer 表达式上下文已有 `query`，运营用 `{{ query.ch }}` 做渠道差异化展示；
+  browser host 的分享带当前 URL（含渠道参），渠道可自然传播。
+
+剩余：④ SSO、⑤ 埋点报表、⑥ COS STS。
 
 ---
 
