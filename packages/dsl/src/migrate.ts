@@ -15,8 +15,13 @@ interface Migration {
   up: (dsl: RawDsl) => RawDsl;
 }
 
-const migrations: Migration[] = [
-  // 示例（1.0.0 是首版，暂无迁移）：
+/**
+ * 当前生效的迁移表。每次 DSL 结构破坏性变更补一条：
+ * { from: '1.0.0', to: '1.1.0', up: ... }
+ * 导出是为了单测注入假迁移链验证推进逻辑，正常使用走默认参数。
+ */
+export const DSL_MIGRATIONS: Migration[] = [
+  // 1.0.0 是首版，暂无迁移。示例：
   // { from: '1.0.0', to: '1.1.0', up: (dsl) => ({ ...dsl, schemaVersion: '1.1.0', ... }) },
 ];
 
@@ -27,7 +32,7 @@ export interface MigrateResult {
   applied: string[];
 }
 
-export function migrateDsl(input: unknown): MigrateResult {
+export function migrateDsl(input: unknown, migrations: Migration[] = DSL_MIGRATIONS): MigrateResult {
   if (!isPlainObject(input)) {
     throw new Error('DSL 需为对象');
   }

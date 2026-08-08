@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import {
   DSL_SCHEMA_VERSION,
+  migrateDsl,
   validateFinalDsl,
   type FinalDsl,
   type Manifest,
@@ -48,8 +49,10 @@ export class PublishService {
       if (!draft) throw new BadRequestException('活动尚无内容，请先在设计器中编辑');
 
       const knownMaterials = await this.loadEnabledMaterials();
+      // 先迁移再校验：历史版本发布的 DSL 重新发布时，先沿迁移链推到当前协议
+      const migrated = migrateDsl(draft.dsl);
       // publish 模式：草稿期只提示的「还没填」在这里升级为错误，拦住不完整的配置
-      const result = validateFinalDsl(draft.dsl, { knownMaterials, mode: 'publish' });
+      const result = validateFinalDsl(migrated.dsl, { knownMaterials, mode: 'publish' });
       if (!result.success) {
         throw new BadRequestException({ message: '发布校验失败', errors: result.issues });
       }
