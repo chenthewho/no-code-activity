@@ -4,6 +4,7 @@ import { PERMISSION } from '@nca/shared';
 import { RequirePermissions } from '../../common/decorators';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { Audit } from '../audit/audit.decorator';
 import { createPrizeSchema, updatePrizeSchema, type CreatePrizeDto, type UpdatePrizeDto } from './prize.dto';
 import { PrizeService } from './prize.service';
 
@@ -23,6 +24,7 @@ export class PrizeController {
   @Post()
   @ApiOperation({ summary: '新建奖品，初始化库存' })
   @RequirePermissions(PERMISSION.ACTIVITY_EDIT)
+  @Audit({ action: 'prize.create' })
   create(@Body(new ZodValidationPipe(createPrizeSchema)) dto: CreatePrizeDto) {
     return this.prizes.create(dto);
   }
@@ -30,6 +32,7 @@ export class PrizeController {
   @Patch(':id')
   @ApiOperation({ summary: '更新奖品；改 total 时重置剩余库存' })
   @RequirePermissions(PERMISSION.ACTIVITY_EDIT)
+  @Audit({ action: 'prize.update', targetParam: 'id' })
   update(@Param('id') id: string, @Body(new ZodValidationPipe(updatePrizeSchema)) dto: UpdatePrizeDto) {
     return this.prizes.update(id, dto);
   }
@@ -37,6 +40,7 @@ export class PrizeController {
   @Delete(':id')
   @ApiOperation({ summary: '删除奖品（连同中奖记录）' })
   @RequirePermissions(PERMISSION.ACTIVITY_EDIT)
+  @Audit({ action: 'prize.remove', targetParam: 'id' })
   remove(@Param('id') id: string) {
     return this.prizes.remove(id);
   }

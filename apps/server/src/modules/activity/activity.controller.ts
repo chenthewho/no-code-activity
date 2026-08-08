@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { CurrentUser, RequirePermissions } from '../../common/decorators';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { Audit } from '../audit/audit.decorator';
 import { DraftService } from '../dsl/draft.service';
 import { PublishService } from '../publish/publish.service';
 import type { JwtPayload } from '../auth/auth.types';
@@ -64,6 +65,7 @@ export class ActivityController {
   @Post()
   @ApiOperation({ summary: '新建活动（可基于模板）' })
   @RequirePermissions(PERMISSION.ACTIVITY_EDIT)
+  @Audit({ action: 'activity.create' })
   create(
     @Body(new ZodValidationPipe(createActivitySchema)) dto: CreateActivityDto,
     @CurrentUser() user: JwtPayload,
@@ -74,6 +76,7 @@ export class ActivityController {
   @Patch(':id')
   @ApiOperation({ summary: '更新活动基础信息' })
   @RequirePermissions(PERMISSION.ACTIVITY_EDIT)
+  @Audit({ action: 'activity.update', targetParam: 'id' })
   update(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(updateActivitySchema)) dto: UpdateActivityDto,
@@ -84,6 +87,7 @@ export class ActivityController {
   @Delete(':id')
   @ApiOperation({ summary: '删除活动（软删除）' })
   @RequirePermissions(PERMISSION.ACTIVITY_DELETE)
+  @Audit({ action: 'activity.remove', targetParam: 'id' })
   remove(@Param('id') id: string) {
     return this.activity.remove(id);
   }
@@ -91,6 +95,7 @@ export class ActivityController {
   @Post(':id/copy')
   @ApiOperation({ summary: '复制活动' })
   @RequirePermissions(PERMISSION.ACTIVITY_EDIT)
+  @Audit({ action: 'activity.copy', targetParam: 'id' })
   copy(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
     return this.activity.copy(id, user.sub);
   }
@@ -120,6 +125,7 @@ export class ActivityController {
   @Post(':id/publish')
   @ApiOperation({ summary: '发布活动，生成不可变版本快照' })
   @RequirePermissions(PERMISSION.ACTIVITY_PUBLISH)
+  @Audit({ action: 'activity.publish', targetParam: 'id' })
   publishActivity(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(publishSchema)) dto: { changelog?: string },
@@ -138,6 +144,7 @@ export class ActivityController {
   @Post(':id/rollback')
   @ApiOperation({ summary: '回滚到指定版本（只切指针，秒级生效）' })
   @RequirePermissions(PERMISSION.ACTIVITY_PUBLISH)
+  @Audit({ action: 'activity.rollback', targetParam: 'id' })
   rollback(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(rollbackSchema)) dto: { version: number },
@@ -148,6 +155,7 @@ export class ActivityController {
   @Post(':id/status')
   @ApiOperation({ summary: '上线 / 下线' })
   @RequirePermissions(PERMISSION.ACTIVITY_PUBLISH)
+  @Audit({ action: 'activity.status', targetParam: 'id' })
   changeStatus(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(statusSchema)) dto: { status: 'published' | 'offline' },

@@ -208,3 +208,22 @@ export const analyticsApi = {
   report: (activityId: string, days = 7) =>
     request<AnalyticsReport>('/analytics/report', { query: { activityId, days: String(days) } }),
 };
+
+export interface AuditLogItem {
+  id: string;
+  userId: string;
+  username?: string;
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  detail?: unknown;
+  ip?: string;
+  createdAt: string;
+}
+
+export const auditApi = {
+  list: (query: { page?: number; pageSize?: number; action?: string; targetType?: string } = {}) =>
+    request<{ rows: AuditLogItem[]; total: number }>('/audit-logs', {
+      query: query as Record<string, string>,
+    }),
+};

@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { CurrentUser, RequirePermissions } from '../../common/decorators';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { Audit } from '../audit/audit.decorator';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import type { JwtPayload } from '../auth/auth.types';
 
@@ -217,6 +218,7 @@ class TemplateController {
   @Post()
   @ApiOperation({ summary: '将活动另存为模板' })
   @RequirePermissions(PERMISSION.TEMPLATE_MANAGE)
+  @Audit({ action: 'template.create' })
   create(
     @Body(new ZodValidationPipe(createSchema)) dto: CreateDto,
     @CurrentUser() user: JwtPayload,
@@ -227,6 +229,7 @@ class TemplateController {
   @Post(':id/favorite')
   @ApiOperation({ summary: '收藏 / 取消收藏' })
   @RequirePermissions(PERMISSION.TEMPLATE_VIEW)
+  @Audit({ action: 'template.favorite', targetParam: 'id' })
   favorite(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
     return this.service.toggleFavorite(id, user.sub);
   }
@@ -234,6 +237,7 @@ class TemplateController {
   @Delete(':id')
   @ApiOperation({ summary: '下架模板' })
   @RequirePermissions(PERMISSION.TEMPLATE_MANAGE)
+  @Audit({ action: 'template.disable', targetParam: 'id' })
   disable(@Param('id') id: string) {
     return this.service.disable(id);
   }

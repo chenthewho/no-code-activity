@@ -4,6 +4,7 @@ import { PERMISSION } from '@nca/shared';
 import { RequirePermissions } from '../../common/decorators';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { Audit } from '../audit/audit.decorator';
 import { createChannelSchema, type CreateChannelDto } from './channel.dto';
 import { ChannelService } from './channel.service';
 
@@ -23,6 +24,7 @@ export class ChannelController {
   @Post()
   @ApiOperation({ summary: '新建渠道，返回落地链接' })
   @RequirePermissions(PERMISSION.ACTIVITY_EDIT)
+  @Audit({ action: 'channel.create' })
   create(@Body(new ZodValidationPipe(createChannelSchema)) dto: CreateChannelDto) {
     return this.channels.create(dto);
   }
@@ -30,6 +32,7 @@ export class ChannelController {
   @Delete(':id')
   @ApiOperation({ summary: '删除渠道' })
   @RequirePermissions(PERMISSION.ACTIVITY_EDIT)
+  @Audit({ action: 'channel.remove', targetParam: 'id' })
   remove(@Param('id') id: string) {
     return this.channels.remove(id);
   }

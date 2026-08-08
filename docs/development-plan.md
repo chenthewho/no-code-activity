@@ -319,6 +319,11 @@ renderer 的 `lottery.draw` 动作已接入（写回 `state.prizeIndex`），adm
 - admin 活动详情页新增「数据报表」卡片（PV/点击/转化统计 + Top 节点 + 每日 PV 列表）。
 - 逐节点曝光（IntersectionObserver + DOM 打标）留作后续，v1 是页面级 PV。
 
+**M4 · 操作审计（2026-08-08）**：`audit_log` 表 + `@Audit` 装饰器 + 全局
+`AuditInterceptor`（成功变更后自动记录 userId/action/资源/ip/请求体），已应用到
+活动（create/update/remove/copy/publish/rollback/status）、模板、奖品、渠道的变更接口；
+`GET /audit-logs`（system:manage）+ admin「操作审计」页。草稿自动保存不入审计（太吵）。
+
 剩余：④ SSO、⑥ COS STS。
 
 ---

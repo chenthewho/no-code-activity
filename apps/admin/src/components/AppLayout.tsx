@@ -5,6 +5,7 @@ import {
   LogoutOutlined,
   ProjectOutlined,
   ThunderboltFilled,
+  FileSearchOutlined,
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import { PERMISSION } from '@nca/shared';
@@ -43,6 +44,11 @@ export function AppLayout() {
       key: '/ai',
       icon: <RobotOutlined />,
       label: <Link to="/ai">AI 工作台</Link>,
+    },
+    can(PERMISSION.SYSTEM_MANAGE) && {
+      key: '/audit',
+      icon: <FileSearchOutlined />,
+      label: <Link to="/audit">操作审计</Link>,
     },
   ].filter(Boolean) as { key: string; icon?: React.ReactNode; label: React.ReactNode }[];
 

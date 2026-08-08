@@ -9,6 +9,7 @@ import { ActivityModule } from './modules/activity/activity.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AssetModule } from './modules/asset/asset.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ChannelModule } from './modules/channel/channel.module';
 import { MaterialModule } from './modules/material/material.module';
@@ -29,6 +30,7 @@ import { TemplateModule } from './modules/template/template.module';
     ActivityModule,
     AnalyticsModule,
     AssetModule,
+    AuditModule,
     ChannelModule,
     TemplateModule,
     MaterialModule,

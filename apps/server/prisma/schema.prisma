@@ -401,3 +401,25 @@ model AppointmentRecord {
   @@index([activityId, createdAt])
   @@map("appointment_record")
 }
+
+/**
+ * 操作审计：后台「谁在何时对哪个资源做了什么」。由 @Audit 装饰器 + 全局
+ * AuditInterceptor 在成功变更后自动落一条，detail 存请求体便于复盘。
+ */
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  username   String?
+  /// 语义动作，如 activity.publish / template.disable / prize.create
+  action     String
+  targetType String?
+  targetId   String?
+  detail     Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_log")
+}

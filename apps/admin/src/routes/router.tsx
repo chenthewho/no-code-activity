@@ -13,6 +13,7 @@ import { ActivityDetailPage } from './ActivityDetailPage';
 import { DesignerPage } from './DesignerPage';
 import { TemplateListPage } from './TemplateListPage';
 import { AiWorkbenchPage } from './AiWorkbenchPage';
+import { AuditLogPage } from './AuditLogPage';
 import { useAuthStore } from '../stores/auth';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -90,6 +91,13 @@ const aiRoute = createRoute({
   beforeLoad: () => requireAuth([PERMISSION.AI_USE]),
 });
 
+const auditRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/audit',
+  component: AuditLogPage,
+  beforeLoad: () => requireAuth([PERMISSION.SYSTEM_MANAGE]),
+});
+
 /** 设计器铺满全屏，不套后台布局 */
 const designerRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -107,6 +115,7 @@ const routeTree = rootRoute.addChildren([
     activityDetailRoute,
     templateRoute,
     aiRoute,
+    auditRoute,
   ]),
 ]);
 
