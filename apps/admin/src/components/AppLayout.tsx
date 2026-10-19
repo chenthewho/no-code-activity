@@ -6,6 +6,9 @@ import {
   ProjectOutlined,
   ThunderboltFilled,
   FileSearchOutlined,
+  SafetyOutlined,
+  SettingOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import { PERMISSION } from '@nca/shared';
@@ -29,7 +32,28 @@ export function AppLayout() {
   }
 
   // 菜单按权限码过滤，没权限的入口直接不渲染，而不是点进去再报错
-  const items: { key: string; icon?: React.ReactNode; label: React.ReactNode }[] = [
+  type MenuItem = { key: string; icon?: React.ReactNode; label: React.ReactNode; children?: MenuItem[] };
+  const pick = (list: (MenuItem | false)[]) => list.filter(Boolean) as MenuItem[];
+
+  const systemItems = pick([
+    can(PERMISSION.USER_MANAGE) && {
+      key: '/system/users',
+      icon: <TeamOutlined />,
+      label: <Link to="/system/users">用户管理</Link>,
+    },
+    can(PERMISSION.USER_MANAGE) && {
+      key: '/system/roles',
+      icon: <SafetyOutlined />,
+      label: <Link to="/system/roles">角色权限</Link>,
+    },
+    can(PERMISSION.AUDIT_VIEW) && {
+      key: '/audit',
+      icon: <FileSearchOutlined />,
+      label: <Link to="/audit">操作审计</Link>,
+    },
+  ]);
+
+  const items = pick([
     can(PERMISSION.ACTIVITY_VIEW) && {
       key: '/activities',
       icon: <ProjectOutlined />,
@@ -45,14 +69,16 @@ export function AppLayout() {
       icon: <RobotOutlined />,
       label: <Link to="/ai">AI 工作台</Link>,
     },
-    can(PERMISSION.SYSTEM_MANAGE) && {
-      key: '/audit',
-      icon: <FileSearchOutlined />,
-      label: <Link to="/audit">操作审计</Link>,
+    systemItems.length > 0 && {
+      key: 'system',
+      icon: <SettingOutlined />,
+      label: '系统管理',
+      children: systemItems,
     },
-  ].filter(Boolean) as { key: string; icon?: React.ReactNode; label: React.ReactNode }[];
+  ]);
 
-  const selected = items.find((item) => location.pathname.startsWith(item.key))?.key;
+  const leaves = items.flatMap((item) => item.children ?? [item]);
+  const selected = leaves.find((item) => location.pathname.startsWith(item.key))?.key;
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -111,6 +137,7 @@ export function AppLayout() {
             mode="inline"
             style={{ borderInlineEnd: 'none', paddingTop: 8 }}
             selectedKeys={selected ? [selected] : []}
+            defaultOpenKeys={['system']}
             items={items}
           />
         </Sider>

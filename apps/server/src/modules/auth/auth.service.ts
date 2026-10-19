@@ -5,6 +5,7 @@ import type { CurrentUser, Permission } from '@nca/shared';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
 import type { OidcProfile } from '../sso/oidc.client';
 import { SsoService } from '../sso/sso.service';
 import type { JwtPayload } from './auth.types';
@@ -12,6 +13,11 @@ import type { JwtPayload } from './auth.types';
 const USER_WITH_PERMISSIONS = {
   roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
 } as const;
+
+/** 权限缓存时长：改了角色最晚这么久全员生效，换来每个请求不必都查四张表 */
+const PERMISSION_CACHE_MS = 60_000;
+/** 全局权限版本号：任何角色授权变化都递增它，让所有缓存一次性作废 */
+const PERMISSION_VERSION_KEY = 'nca:perm:ver';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -22,7 +28,31 @@ export class AuthService implements OnModuleInit {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly sso: SsoService,
+    private readonly redis: RedisService,
   ) {}
+
+  /**
+   * 以数据库为准的当前身份。token 里的权限是登录那一刻的快照——只信它的话，
+   * 收回权限、停用账号都要等 token 过期（默认 7 天）才生效。
+   * 守卫每次请求都走这里，结果按「权限版本号 + 用户」缓存一分钟。
+   */
+  async livePayload(userId: string): Promise<JwtPayload> {
+    const version = (await this.redis.get(PERMISSION_VERSION_KEY)) ?? '0';
+    const key = `nca:perm:${version}:${userId}`;
+    const cached = await this.redis.get(key);
+    if (cached) return JSON.parse(cached) as JwtPayload;
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: USER_WITH_PERMISSIONS });
+    if (!user?.enabled) throw new UnauthorizedException('账号已停用或不存在，请联系管理员');
+    const payload = this.buildPayload(user);
+    await this.redis.set(key, JSON.stringify(payload), PERMISSION_CACHE_MS);
+    return payload;
+  }
+
+  /** 角色授权、用户角色、启停变化后调用：所有人的权限缓存立即作废 */
+  async invalidatePermissions(): Promise<void> {
+    await this.redis.incrWithExpire(PERMISSION_VERSION_KEY, 30 * 24 * 60 * 60 * 1000);
+  }
 
   onModuleInit(): void {
     this.sso.register('admin', (profile, redirect) => this.completeSso(profile, redirect));

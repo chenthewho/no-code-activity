@@ -10,7 +10,9 @@ import { ImagePicker } from '../components/designer/ImagePicker';
 import { PrizeConfigCard } from '../components/PrizeConfigCard';
 import { ChannelConfigCard } from '../components/ChannelConfigCard';
 import { AnalyticsReportCard } from '../components/AnalyticsReportCard';
+import { ActivityMemberCard } from '../components/ActivityMemberCard';
 import { useAuthStore } from '../stores/auth';
+import { ACCESS_LABEL, canEditActivity, canManageActivity } from '../utils/access';
 
 const STATUS_META = {
   [ACTIVITY_STATUS.DRAFT]: { color: 'default', label: '草稿' },
@@ -41,6 +43,10 @@ export function ActivityDetailPage() {
     queryKey: ['versions', activityId],
     queryFn: () => activityApi.versions(activityId),
   });
+
+  // 功能权限（角色）与数据权限（对这个活动的访问级别）两者都满足才显示操作
+  const editable = can(PERMISSION.ACTIVITY_EDIT) && canEditActivity(activity?.access);
+  const publishable = can(PERMISSION.ACTIVITY_PUBLISH) && canEditActivity(activity?.access);
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['activity', activityId] });
@@ -118,7 +124,7 @@ export function ActivityDetailPage() {
       title: '操作',
       width: 140,
       render: (_: unknown, row: VersionItem) =>
-        can(PERMISSION.ACTIVITY_PUBLISH) && activity?.publishedVersion !== row.version ? (
+        publishable && activity?.publishedVersion !== row.version ? (
           <Popconfirm
             title={`确认将线上版本切回 v${row.version}？`}
             onConfirm={() => rollbackMutation.mutate(row.version)}
@@ -135,7 +141,7 @@ export function ActivityDetailPage() {
         title={activity?.title ?? '活动详情'}
         extra={
           <Space>
-            {can(PERMISSION.ACTIVITY_EDIT) && (
+            {editable && (
               <Button
                 icon={<EditOutlined />}
                 onClick={() => void navigate({ to: '/designer/$activityId', params: { activityId } })}
@@ -143,12 +149,12 @@ export function ActivityDetailPage() {
                 进入设计器
               </Button>
             )}
-            {can(PERMISSION.ACTIVITY_PUBLISH) && activity?.status === ACTIVITY_STATUS.PUBLISHED && (
+            {publishable && activity?.status === ACTIVITY_STATUS.PUBLISHED && (
               <Popconfirm title="下线后 C 端将无法访问" onConfirm={() => statusMutation.mutate('offline')}>
                 <Button danger>下线</Button>
               </Popconfirm>
             )}
-            {can(PERMISSION.ACTIVITY_PUBLISH) && activity?.status === ACTIVITY_STATUS.OFFLINE && (
+            {publishable && activity?.status === ACTIVITY_STATUS.OFFLINE && (
               <Button type="primary" onClick={() => statusMutation.mutate('published')}>
                 重新上线
               </Button>
@@ -171,6 +177,12 @@ export function ActivityDetailPage() {
             <span style={{ color: '#8c8c8c' }}>负责人：</span>
             {activity?.ownerName ?? '—'}
           </span>
+          {activity?.access && (
+            <span>
+              <span style={{ color: '#8c8c8c' }}>我的权限：</span>
+              <Tag>{ACCESS_LABEL[activity.access]}</Tag>
+            </span>
+          )}
           <span>
             <span style={{ color: '#8c8c8c' }}>更新于：</span>
             {activity?.updatedAt ? new Date(activity.updatedAt).toLocaleString('zh-CN') : '—'}
@@ -180,7 +192,7 @@ export function ActivityDetailPage() {
         <Form
           form={form}
           layout="vertical"
-          disabled={!can(PERMISSION.ACTIVITY_EDIT)}
+          disabled={!editable}
           onFinish={(values) => updateMutation.mutate(values)}
           style={{ maxWidth: 560 }}
         >
@@ -212,11 +224,13 @@ export function ActivityDetailPage() {
         <Table rowKey="id" dataSource={versions} columns={columns} pagination={false} size="small" />
       </Card>
 
-      <PrizeConfigCard activityId={activityId} canEdit={can(PERMISSION.ACTIVITY_EDIT)} />
+      <ActivityMemberCard activityId={activityId} canManage={canManageActivity(activity?.access)} />
 
-      <ChannelConfigCard activityId={activityId} canEdit={can(PERMISSION.ACTIVITY_EDIT)} />
+      <PrizeConfigCard activityId={activityId} canEdit={editable && can(PERMISSION.PRIZE_MANAGE)} />
 
-      <AnalyticsReportCard activityId={activityId} />
+      <ChannelConfigCard activityId={activityId} canEdit={editable && can(PERMISSION.CHANNEL_MANAGE)} />
+
+      {can(PERMISSION.ANALYTICS_VIEW) && <AnalyticsReportCard activityId={activityId} />}
     </Space>
   );
 }

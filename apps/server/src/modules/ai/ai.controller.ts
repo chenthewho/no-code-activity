@@ -5,6 +5,7 @@ import { PERMISSION, type AiEvent } from '@nca/shared';
 import { CurrentUser, RequirePermissions } from '../../common/decorators';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { ActivityAccessService } from '../access/activity-access.service';
 import type { JwtPayload } from '../auth/auth.types';
 import { AiService } from './ai.service';
 import {
@@ -22,15 +23,20 @@ import {
 // 对「发布必须授权」来说这是个安全洞，不是小疏忽
 @UseGuards(PermissionsGuard)
 export class AiController {
-  constructor(private readonly ai: AiService) {}
+  constructor(
+    private readonly ai: AiService,
+    private readonly access: ActivityAccessService,
+  ) {}
 
   @Post('runs')
   @ApiOperation({ summary: '创建一次 AI 运行' })
   @RequirePermissions(PERMISSION.AI_USE)
-  start(
+  async start(
     @Body(new ZodValidationPipe(startRunSchema)) dto: StartRunDto,
     @CurrentUser() user: JwtPayload,
   ) {
+    // AI 会改写绑定活动的草稿，等同于编辑它；不绑定活动时由工作流自己建新活动
+    if (dto.activityId) await this.access.assert(user, dto.activityId, 'edit');
     return this.ai.start(dto, user.sub);
   }
 
@@ -65,6 +71,8 @@ export class AiController {
     @CurrentUser() user: JwtPayload,
     @Res() res: Response,
   ): Promise<void> {
+    // 必须在 SSE 开流之前校验：响应头一旦发出，就只能在流里报错了
+    await this.access.assert(user, dto.activityId, 'edit');
     await this.pipe(res, this.ai.edit(dto, user.sub, user.permissions ?? []));
   }
 

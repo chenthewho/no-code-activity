@@ -54,9 +54,24 @@ export const PERMISSION = {
   ACTIVITY_EDIT: 'activity:edit',
   ACTIVITY_PUBLISH: 'activity:publish',
   ACTIVITY_DELETE: 'activity:delete',
+  /**
+   * 数据范围：可查看、操作全部活动。没有它时只能碰自己负责或被拉进协作的活动——
+   * 功能权限（能不能编辑）与数据权限（能编辑哪些）是两个维度，缺一个都会越权。
+   */
+  ACTIVITY_ALL: 'activity:all',
+  /** 奖品与库存直接关系到成本，从「编辑活动」里单拎出来 */
+  PRIZE_MANAGE: 'prize:manage',
+  CHANNEL_MANAGE: 'channel:manage',
+  ANALYTICS_VIEW: 'analytics:view',
   TEMPLATE_VIEW: 'template:view',
   TEMPLATE_MANAGE: 'template:manage',
   MATERIAL_MANAGE: 'material:manage',
+  /** 用户、角色与授权 */
+  USER_MANAGE: 'user:manage',
+  AUDIT_VIEW: 'audit:view',
+  /** 运行监控看板与告警规则 */
+  MONITOR_VIEW: 'monitor:view',
+  MONITOR_MANAGE: 'monitor:manage',
   /**
    * AI 助手。与 activity:edit 分开，是为了能单独关掉 AI 而保留手工搭建——
    * 模型会写草稿，出问题时需要一个不牵连正常编辑的开关。
@@ -68,5 +83,19 @@ export const PERMISSION = {
 } as const;
 
 export type Permission = (typeof PERMISSION)[keyof typeof PERMISSION];
+
+/** 活动协作成员的角色：editor 可编辑，viewer 只读。负责人另记在 activity.ownerId */
+export const ACTIVITY_MEMBER_ROLE = {
+  EDITOR: 'editor',
+  VIEWER: 'viewer',
+} as const;
+
+export type ActivityMemberRole = (typeof ACTIVITY_MEMBER_ROLE)[keyof typeof ACTIVITY_MEMBER_ROLE];
+
+/**
+ * 当前用户对某个活动的访问级别，前端据此决定按钮显隐：
+ * all —— 有 activity:all 数据范围；owner —— 负责人；editor / viewer —— 协作成员。
+ */
+export type ActivityAccess = 'all' | 'owner' | ActivityMemberRole;
 
 export const ROOT_NODE_ID = 'ROOT';

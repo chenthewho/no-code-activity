@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import { Button, Card, Form, Input, Modal, Space, Table, Tag, message, Popconfirm } from 'antd';
+import { Button, Card, Form, Input, Modal, Segmented, Space, Table, Tag, message, Popconfirm } from 'antd';
 import { CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { ACTIVITY_STATUS, PERMISSION, type ActivityStatus, type ActivitySummary } from '@nca/shared';
 import { activityApi } from '../api';
 import { useAuthStore } from '../stores/auth';
+import { ACCESS_LABEL, canEditActivity, canManageActivity } from '../utils/access';
+
+type Scope = 'joined' | 'mine' | 'all';
 
 const STATUS_META: Record<ActivityStatus, { color: string; label: string }> = {
   [ACTIVITY_STATUS.DRAFT]: { color: 'default', label: '草稿' },
@@ -19,12 +22,14 @@ export function ActivityListPage() {
   const can = useAuthStore((s) => s.can);
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState('');
+  const seeAll = can(PERMISSION.ACTIVITY_ALL);
+  const [scope, setScope] = useState<Scope>(seeAll ? 'all' : 'joined');
   const [creating, setCreating] = useState(false);
   const [form] = Form.useForm<{ title: string }>();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['activities', page, keyword],
-    queryFn: () => activityApi.list({ page, pageSize: 10, keyword: keyword || undefined }),
+    queryKey: ['activities', page, keyword, scope],
+    queryFn: () => activityApi.list({ page, pageSize: 10, keyword: keyword || undefined, scope }),
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['activities'] });
@@ -84,6 +89,12 @@ export function ActivityListPage() {
     },
     { title: '负责人', dataIndex: 'ownerName', width: 120 },
     {
+      title: '我的权限',
+      dataIndex: 'access',
+      width: 100,
+      render: (access?: ActivitySummary['access']) => (access ? <Tag>{ACCESS_LABEL[access]}</Tag> : '—'),
+    },
+    {
       title: '更新时间',
       dataIndex: 'updatedAt',
       width: 180,
@@ -94,7 +105,7 @@ export function ActivityListPage() {
       width: 260,
       render: (_: unknown, row: ActivitySummary) => (
         <Space size="small">
-          {can(PERMISSION.ACTIVITY_EDIT) && (
+          {can(PERMISSION.ACTIVITY_EDIT) && canEditActivity(row.access) && (
             <Button
               type="link"
               size="small"
@@ -109,7 +120,7 @@ export function ActivityListPage() {
               复制
             </Button>
           )}
-          {can(PERMISSION.ACTIVITY_DELETE) && (
+          {can(PERMISSION.ACTIVITY_DELETE) && canManageActivity(row.access) && (
             <Popconfirm title="确认删除该活动？" onConfirm={() => removeMutation.mutate(row.id)}>
               <Button type="link" size="small" danger icon={<DeleteOutlined />}>
                 删除
@@ -126,6 +137,18 @@ export function ActivityListPage() {
       title="活动管理"
       extra={
         <Space>
+          <Segmented<Scope>
+            value={scope}
+            onChange={(value) => {
+              setScope(value);
+              setPage(1);
+            }}
+            options={[
+              { value: 'joined', label: '我参与的' },
+              { value: 'mine', label: '我负责的' },
+              ...(seeAll ? [{ value: 'all' as const, label: '全部' }] : []),
+            ]}
+          />
           <Input.Search
             placeholder="搜索活动名称"
             allowClear

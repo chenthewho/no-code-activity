@@ -15,9 +15,17 @@ const PERMISSION_META: Record<string, { name: string; module: string }> = {
   [PERMISSION.ACTIVITY_EDIT]: { name: '编辑活动', module: 'activity' },
   [PERMISSION.ACTIVITY_PUBLISH]: { name: '发布活动', module: 'activity' },
   [PERMISSION.ACTIVITY_DELETE]: { name: '删除活动', module: 'activity' },
+  [PERMISSION.ACTIVITY_ALL]: { name: '全部活动（数据范围）', module: 'activity' },
+  [PERMISSION.PRIZE_MANAGE]: { name: '管理奖品与库存', module: 'activity' },
+  [PERMISSION.CHANNEL_MANAGE]: { name: '管理渠道链接', module: 'activity' },
+  [PERMISSION.ANALYTICS_VIEW]: { name: '查看数据报表', module: 'activity' },
   [PERMISSION.TEMPLATE_VIEW]: { name: '查看模板', module: 'template' },
   [PERMISSION.TEMPLATE_MANAGE]: { name: '管理模板', module: 'template' },
   [PERMISSION.MATERIAL_MANAGE]: { name: '管理物料', module: 'material' },
+  [PERMISSION.USER_MANAGE]: { name: '管理用户与角色', module: 'system' },
+  [PERMISSION.AUDIT_VIEW]: { name: '查看操作审计', module: 'system' },
+  [PERMISSION.MONITOR_VIEW]: { name: '查看运行监控', module: 'monitor' },
+  [PERMISSION.MONITOR_MANAGE]: { name: '管理告警规则', module: 'monitor' },
   [PERMISSION.AI_USE]: { name: '使用 AI 助手', module: 'ai' },
   [PERMISSION.AI_PUBLISH]: { name: 'AI 发起发布', module: 'ai' },
   [PERMISSION.SYSTEM_MANAGE]: { name: '系统管理', module: 'system' },
@@ -30,12 +38,34 @@ const ROLES = [
     permissions: Object.keys(PERMISSION_META),
   },
   {
+    code: 'ops_lead',
+    name: '运营负责人',
+    permissions: [
+      PERMISSION.ACTIVITY_VIEW,
+      PERMISSION.ACTIVITY_EDIT,
+      PERMISSION.ACTIVITY_PUBLISH,
+      PERMISSION.ACTIVITY_DELETE,
+      PERMISSION.ACTIVITY_ALL,
+      PERMISSION.PRIZE_MANAGE,
+      PERMISSION.CHANNEL_MANAGE,
+      PERMISSION.ANALYTICS_VIEW,
+      PERMISSION.TEMPLATE_VIEW,
+      PERMISSION.TEMPLATE_MANAGE,
+      PERMISSION.AI_USE,
+      PERMISSION.AI_PUBLISH,
+      PERMISSION.MONITOR_VIEW,
+    ] as string[],
+  },
+  {
     code: 'operator',
     name: '运营',
     permissions: [
       PERMISSION.ACTIVITY_VIEW,
       PERMISSION.ACTIVITY_EDIT,
       PERMISSION.ACTIVITY_PUBLISH,
+      PERMISSION.PRIZE_MANAGE,
+      PERMISSION.CHANNEL_MANAGE,
+      PERMISSION.ANALYTICS_VIEW,
       PERMISSION.TEMPLATE_VIEW,
       PERMISSION.AI_USE,
       PERMISSION.AI_PUBLISH,
@@ -44,7 +74,7 @@ const ROLES = [
   {
     code: 'viewer',
     name: '只读',
-    permissions: [PERMISSION.ACTIVITY_VIEW, PERMISSION.TEMPLATE_VIEW] as string[],
+    permissions: [PERMISSION.ACTIVITY_VIEW, PERMISSION.ANALYTICS_VIEW, PERMISSION.TEMPLATE_VIEW] as string[],
   },
 ];
 
@@ -72,10 +102,12 @@ async function seedRoles() {
       select: { id: true },
     });
 
-    // 全量重建角色权限，保证删掉的权限真的会被收回
-    await prisma.rolePermission.deleteMany({ where: { roleId: saved.id } });
+    // 内置角色只补不删：新版本引入的权限要补给老角色，否则升级后运营突然管不了奖品。
+    // 代价是管理员从内置角色上收回的默认权限，重跑 seed 会被补回来——
+    // 需要长期收紧的，请在后台新建自定义角色，seed 不会碰它。
     await prisma.rolePermission.createMany({
       data: permissions.map((p) => ({ roleId: saved.id, permissionId: p.id })),
+      skipDuplicates: true,
     });
   }
   console.log(`✓ 角色 ${ROLES.length} 个`);

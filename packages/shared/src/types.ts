@@ -1,4 +1,4 @@
-import type { ActivityStatus, Permission } from './constants';
+import type { ActivityAccess, ActivityStatus, Permission } from './constants';
 
 /** 统一响应包装，Nest 拦截器产出、Admin/Renderer 请求层解包 */
 export interface ApiResponse<T> {
@@ -65,6 +65,8 @@ export interface ActivitySummary {
   publishedVersion?: number;
   ownerId: string;
   ownerName?: string;
+  /** 当前用户对该活动的访问级别 */
+  access?: ActivityAccess;
   createdAt: string;
   updatedAt: string;
 }

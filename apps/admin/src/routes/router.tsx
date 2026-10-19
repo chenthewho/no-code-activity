@@ -14,6 +14,8 @@ import { DesignerPage } from './DesignerPage';
 import { TemplateListPage } from './TemplateListPage';
 import { AiWorkbenchPage } from './AiWorkbenchPage';
 import { AuditLogPage } from './AuditLogPage';
+import { UserManagePage } from './UserManagePage';
+import { RoleManagePage } from './RoleManagePage';
 import { useAuthStore } from '../stores/auth';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -100,7 +102,21 @@ const auditRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/audit',
   component: AuditLogPage,
-  beforeLoad: () => requireAuth([PERMISSION.SYSTEM_MANAGE]),
+  beforeLoad: () => requireAuth([PERMISSION.AUDIT_VIEW]),
+});
+
+const userRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/system/users',
+  component: UserManagePage,
+  beforeLoad: () => requireAuth([PERMISSION.USER_MANAGE]),
+});
+
+const roleRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/system/roles',
+  component: RoleManagePage,
+  beforeLoad: () => requireAuth([PERMISSION.USER_MANAGE]),
 });
 
 /** 设计器铺满全屏，不套后台布局 */
@@ -121,6 +137,8 @@ const routeTree = rootRoute.addChildren([
     templateRoute,
     aiRoute,
     auditRoute,
+    userRoute,
+    roleRoute,
   ]),
 ]);
 

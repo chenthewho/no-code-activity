@@ -35,8 +35,18 @@ export const listActivitySchema = z.object({
     .enum([ACTIVITY_STATUS.DRAFT, ACTIVITY_STATUS.PUBLISHED, ACTIVITY_STATUS.OFFLINE])
     .optional(),
   ownerId: z.string().optional(),
+  /** 数据范围：mine 我负责的 / joined 我负责或参与的 / all 全部（需 activity:all） */
+  scope: z.enum(['mine', 'joined', 'all']).default('joined'),
 });
 export type ListActivityDto = z.infer<typeof listActivitySchema>;
+
+export const upsertMemberSchema = z.object({
+  userId: z.string().min(1),
+  role: z.enum(['editor', 'viewer']).default('editor'),
+});
+export type UpsertMemberDto = z.infer<typeof upsertMemberSchema>;
+
+export const transferOwnerSchema = z.object({ userId: z.string().min(1) });
 
 /** 草稿保存：DSL 结构在 service 里用 finalDslSchema 校验，这里只管外层信封 */
 export const saveDraftSchema = z.object({

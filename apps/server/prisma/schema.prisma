@@ -26,6 +26,7 @@ model User {
 
   roles      UserRole[]
   activities Activity[] @relation("ActivityOwner")
+  memberOf   ActivityMember[]
 
   @@map("user")
 }
@@ -120,6 +121,7 @@ model Activity {
   deletedAt DateTime?
 
   draft       DslDraft?
+  members     ActivityMember[]
   versions    ActivityVersion[]
   assets      Asset[]
   prizes      Prize[]
@@ -130,6 +132,23 @@ model Activity {
   @@index([status, updatedAt])
   @@index([ownerId])
   @@map("activity")
+}
+
+/// 活动协作成员。负责人另记在 activity.ownerId；没有 activity:all 数据范围的用户
+/// 只能看到自己负责或被拉进来的活动。
+model ActivityMember {
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// editor 可编辑 / viewer 只读
+  role       String   @default("editor") @db.VarChar(16)
+  addedBy    String?
+  createdAt  DateTime @default(now())
+
+  @@id([activityId, userId])
+  @@index([userId])
+  @@map("activity_member")
 }
 
 /// 草稿：单活动单行，自动保存直接覆盖

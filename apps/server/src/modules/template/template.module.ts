@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { CurrentUser, RequirePermissions } from '../../common/decorators';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { ActivityAccessGuard, RequireActivityAccess } from '../access/activity-access.guard';
 import { Audit } from '../audit/audit.decorator';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import type { JwtPayload } from '../auth/auth.types';
@@ -187,7 +188,7 @@ class TemplateService {
 
 @ApiTags('template')
 @Controller('templates')
-@UseGuards(PermissionsGuard)
+@UseGuards(PermissionsGuard, ActivityAccessGuard)
 class TemplateController {
   constructor(private readonly service: TemplateService) {}
 
@@ -218,6 +219,7 @@ class TemplateController {
   @Post()
   @ApiOperation({ summary: '将活动另存为模板' })
   @RequirePermissions(PERMISSION.TEMPLATE_MANAGE)
+  @RequireActivityAccess('view', { body: 'activityId' })
   @Audit({ action: 'template.create' })
   create(
     @Body(new ZodValidationPipe(createSchema)) dto: CreateDto,

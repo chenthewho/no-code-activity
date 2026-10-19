@@ -3,15 +3,21 @@ import { createEmptyDsl, finalDslSchema, type FinalDsl } from '@nca/dsl';
 import { ACTIVITY_STATUS, type ActivitySummary, type PageResult } from '@nca/shared';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import type { CreateActivityDto, ListActivityDto, UpdateActivityDto } from './activity.dto';
+import { ActivityAccessService } from '../access/activity-access.service';
+import type { JwtPayload } from '../auth/auth.types';
+import type { CreateActivityDto, ListActivityDto, UpdateActivityDto, UpsertMemberDto } from './activity.dto';
 
 @Injectable()
 export class ActivityService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly access: ActivityAccessService,
+  ) {}
 
-  async list(query: ListActivityDto): Promise<PageResult<ActivitySummary>> {
+  async list(query: ListActivityDto, user: JwtPayload): Promise<PageResult<ActivitySummary>> {
     const where: Prisma.ActivityWhereInput = {
       deletedAt: null,
+      ...this.access.scopeWhere(user, query.scope),
       ...(query.status ? { status: query.status } : {}),
       ...(query.ownerId ? { ownerId: query.ownerId } : {}),
       ...(query.keyword ? { title: { contains: query.keyword } } : {}),
@@ -27,6 +33,7 @@ export class ActivityService {
       }),
       this.prisma.activity.count({ where }),
     ]);
+    const access = await this.access.accessMap(user, rows);
 
     return {
       list: rows.map((row) => ({
@@ -39,6 +46,7 @@ export class ActivityService {
         publishedVersion: row.publishedVersion ?? undefined,
         ownerId: row.ownerId,
         ownerName: row.owner.nickname,
+        access: access[row.id],
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
       })),
@@ -55,6 +63,67 @@ export class ActivityService {
     });
     if (!activity) throw new NotFoundException('活动不存在');
     return activity;
+  }
+
+  /** 详情带上负责人昵称与当前用户的访问级别，前端据此决定按钮显隐 */
+  async detailFor(id: string, user: JwtPayload) {
+    const activity = await this.detail(id);
+    const access = await this.access.resolve(user, id);
+    return { ...activity, ownerName: activity.owner.nickname, access };
+  }
+
+  // ── 协作成员 ────────────────────────────────────────────
+
+  async members(id: string) {
+    const activity = await this.prisma.activity.findFirst({
+      where: { id, deletedAt: null },
+      select: {
+        owner: { select: { id: true, username: true, nickname: true } },
+        members: {
+          orderBy: { createdAt: 'asc' },
+          select: { role: true, createdAt: true, user: { select: { id: true, username: true, nickname: true } } },
+        },
+      },
+    });
+    if (!activity) throw new NotFoundException('活动不存在');
+    return {
+      owner: activity.owner,
+      members: activity.members.map((m) => ({ ...m.user, role: m.role, createdAt: m.createdAt.toISOString() })),
+    };
+  }
+
+  async upsertMember(id: string, dto: UpsertMemberDto, actorId: string) {
+    const [activity, user] = await Promise.all([
+      this.detail(id),
+      this.prisma.user.findUnique({ where: { id: dto.userId } }),
+    ]);
+    if (!user?.enabled) throw new BadRequestException('用户不存在或已停用');
+    if (activity.ownerId === dto.userId) throw new BadRequestException('负责人无需再添加为成员');
+    await this.prisma.activityMember.upsert({
+      where: { activityId_userId: { activityId: id, userId: dto.userId } },
+      create: { activityId: id, userId: dto.userId, role: dto.role, addedBy: actorId },
+      update: { role: dto.role },
+    });
+  }
+
+  async removeMember(id: string, userId: string) {
+    await this.prisma.activityMember.deleteMany({ where: { activityId: id, userId } });
+  }
+
+  /** 转交负责人：原负责人降为编辑成员，不会因为交接就失去访问权 */
+  async transferOwner(id: string, userId: string) {
+    const [activity, user] = await Promise.all([this.detail(id), this.prisma.user.findUnique({ where: { id: userId } })]);
+    if (!user?.enabled) throw new BadRequestException('用户不存在或已停用');
+    if (activity.ownerId === userId) return;
+    await this.prisma.$transaction([
+      this.prisma.activity.update({ where: { id }, data: { ownerId: userId } }),
+      this.prisma.activityMember.deleteMany({ where: { activityId: id, userId } }),
+      this.prisma.activityMember.upsert({
+        where: { activityId_userId: { activityId: id, userId: activity.ownerId } },
+        create: { activityId: id, userId: activity.ownerId, role: 'editor' },
+        update: { role: 'editor' },
+      }),
+    ]);
   }
 
   /**

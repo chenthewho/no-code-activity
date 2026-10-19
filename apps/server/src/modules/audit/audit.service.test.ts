@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AuditService } from './audit.service';
+import { AuditService, redact } from './audit.service';
 
 interface AuditRow {
   userId: string;
@@ -60,5 +60,11 @@ describe('AuditService', () => {
     const result = await service.list({ page: 1, pageSize: 20 });
     expect(result.total).toBe(2);
     expect(result.rows).toHaveLength(2);
+  });
+
+  it('密码、密钥、票据类字段的值不进审计', () => {
+    expect(
+      redact({ username: 'a', password: 'p', nested: { clientSecret: 's', list: [{ ticket: 't', ok: 1 }] } }),
+    ).toEqual({ username: 'a', password: '***', nested: { clientSecret: '***', list: [{ ticket: '***', ok: 1 }] } });
   });
 });

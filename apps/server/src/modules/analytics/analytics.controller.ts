@@ -5,6 +5,7 @@ import { PERMISSION } from '@nca/shared';
 import { Public, RequirePermissions } from '../../common/decorators';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { markRaw } from '../../common/interceptors/transform.interceptor';
+import { ActivityAccessGuard, RequireActivityAccess } from '../access/activity-access.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { reportEventsSchema, type ReportEventsDto } from './analytics.dto';
 import { AnalyticsService } from './analytics.service';
@@ -30,16 +31,17 @@ export class AnalyticsController {
   }
 }
 
-/** 运营报表：需要登录 + activity:view */
+/** 运营报表：需要登录 + analytics:view + 能看到该活动 */
 @ApiTags('analytics')
 @Controller('analytics')
-@UseGuards(PermissionsGuard)
+@UseGuards(PermissionsGuard, ActivityAccessGuard)
 export class AnalyticsReportController {
   constructor(private readonly analytics: AnalyticsService) {}
 
   @Get('report')
   @ApiOperation({ summary: '活动埋点报表（PV/点击/转化 + Top 节点 + 趋势）' })
-  @RequirePermissions(PERMISSION.ACTIVITY_VIEW)
+  @RequirePermissions(PERMISSION.ANALYTICS_VIEW)
+  @RequireActivityAccess('view', { query: 'activityId' })
   report(@Query('activityId') activityId: string, @Query('days') days?: string) {
     return this.analytics.report(activityId, Math.min(Number(days) || 7, 30));
   }

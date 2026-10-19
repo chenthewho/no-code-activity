@@ -23,7 +23,7 @@ export class AuditController {
 
   @Get()
   @ApiOperation({ summary: '操作审计列表（谁在何时对哪个资源做了什么）' })
-  @RequirePermissions(PERMISSION.SYSTEM_MANAGE)
+  @RequirePermissions(PERMISSION.AUDIT_VIEW)
   list(@Query(new ZodValidationPipe(listSchema)) query: ListDto) {
     return this.audit.list(query);
   }

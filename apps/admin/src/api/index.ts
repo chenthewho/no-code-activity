@@ -1,5 +1,12 @@
 import type { FinalDsl, MaterialMeta } from '@nca/dsl';
-import type { ActivityStatus, ActivitySummary, CurrentUser, PageResult } from '@nca/shared';
+import type {
+  ActivityAccess,
+  ActivityMemberRole,
+  ActivityStatus,
+  ActivitySummary,
+  CurrentUser,
+  PageResult,
+} from '@nca/shared';
 import { request } from './client';
 
 export const authApi = {
@@ -28,6 +35,25 @@ export interface ActivityListQuery {
   pageSize?: number;
   keyword?: string;
   status?: ActivityStatus;
+  /** mine 我负责的 / joined 我负责或参与的 / all 全部（需 activity:all） */
+  scope?: 'mine' | 'joined' | 'all';
+}
+
+export interface ActivityDetail extends Omit<ActivitySummary, 'access'> {
+  description?: string;
+  /** null：活动存在但当前用户无权访问（正常情况下服务端已 403，不会走到这里） */
+  access: ActivityAccess | null;
+}
+
+export interface UserBrief {
+  id: string;
+  username: string;
+  nickname: string;
+}
+
+export interface ActivityMembers {
+  owner: UserBrief;
+  members: (UserBrief & { role: ActivityMemberRole; createdAt: string })[];
 }
 
 export interface VersionItem {
@@ -50,7 +76,7 @@ export interface PublishResult {
 export const activityApi = {
   list: (query: ActivityListQuery) =>
     request<PageResult<ActivitySummary>>('/activities', { query: query as Record<string, string> }),
-  detail: (id: string) => request<ActivitySummary>(`/activities/${id}`),
+  detail: (id: string) => request<ActivityDetail>(`/activities/${id}`),
   create: (body: { title: string; description?: string; templateId?: string }) =>
     request<{ id: string }>('/activities', { method: 'POST', body }),
   update: (id: string, body: Record<string, unknown>) =>
@@ -72,6 +98,64 @@ export const activityApi = {
     request<PublishResult>(`/activities/${id}/rollback`, { method: 'POST', body: { version } }),
   changeStatus: (id: string, status: 'published' | 'offline') =>
     request<void>(`/activities/${id}/status`, { method: 'POST', body: { status } }),
+
+  members: (id: string) => request<ActivityMembers>(`/activities/${id}/members`),
+  upsertMember: (id: string, userId: string, role: ActivityMemberRole) =>
+    request<void>(`/activities/${id}/members`, { method: 'PUT', body: { userId, role } }),
+  removeMember: (id: string, userId: string) =>
+    request<void>(`/activities/${id}/members/${userId}`, { method: 'DELETE' }),
+  transferOwner: (id: string, userId: string) =>
+    request<void>(`/activities/${id}/owner`, { method: 'POST', body: { userId } }),
+};
+
+export interface UserItem {
+  id: string;
+  username: string;
+  nickname: string;
+  email?: string;
+  enabled: boolean;
+  sso: boolean;
+  roles: { code: string; name: string }[];
+  createdAt: string;
+}
+
+export interface RoleItem {
+  id: string;
+  code: string;
+  name: string;
+  remark?: string;
+  permissions: string[];
+  userCount: number;
+  builtin: boolean;
+}
+
+export interface PermissionItem {
+  id: string;
+  code: string;
+  name: string;
+  module?: string;
+}
+
+export const userApi = {
+  list: (query: { page?: number; pageSize?: number; keyword?: string } = {}) =>
+    request<PageResult<UserItem>>('/users', { query: query as Record<string, string> }),
+  lookup: (keyword: string) => request<UserBrief[]>('/users/lookup', { query: { keyword } }),
+  create: (body: { username: string; nickname: string; password: string; email?: string; roleCodes: string[] }) =>
+    request<{ id: string }>('/users', { method: 'POST', body }),
+  update: (id: string, body: { nickname?: string; email?: string; enabled?: boolean; roleCodes?: string[] }) =>
+    request<void>(`/users/${id}`, { method: 'PATCH', body }),
+  resetPassword: (id: string, password: string) =>
+    request<void>(`/users/${id}/password`, { method: 'POST', body: { password } }),
+};
+
+export const roleApi = {
+  list: () => request<RoleItem[]>('/roles'),
+  permissions: () => request<PermissionItem[]>('/permissions'),
+  create: (body: { code: string; name: string; remark?: string; permissions: string[] }) =>
+    request<{ id: string }>('/roles', { method: 'POST', body }),
+  update: (id: string, body: { name?: string; remark?: string; permissions?: string[] }) =>
+    request<void>(`/roles/${id}`, { method: 'PATCH', body }),
+  remove: (id: string) => request<void>(`/roles/${id}`, { method: 'DELETE' }),
 };
 
 export const materialApi = {

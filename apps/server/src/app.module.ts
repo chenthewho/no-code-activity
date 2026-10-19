@@ -5,6 +5,7 @@ import { validateEnv } from './config/configuration';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { AccessModule } from './modules/access/access.module';
 import { ActivityModule } from './modules/activity/activity.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
@@ -19,6 +20,7 @@ import { RuntimeAuthModule } from './modules/runtime-auth/runtime-auth.module';
 import { SsoModule } from './modules/sso/sso.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { TemplateModule } from './modules/template/template.module';
+import { UserModule } from './modules/user/user.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { TemplateModule } from './modules/template/template.module';
     SsoModule,
     AuthModule,
     RuntimeAuthModule,
+    AccessModule,
+    UserModule,
     ActivityModule,
     AnalyticsModule,
     AssetModule,
