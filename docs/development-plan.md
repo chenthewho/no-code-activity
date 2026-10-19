@@ -1,9 +1,8 @@
 # 零代码活动页平台 · 开发规划
 
-> **落地进度（2026-07-26）**：M0 / M1 / M2 已完成并端到端验证通过。
-> 运营可在设计器里拖拽搭页、绑事件与数据源、存为模板、发布上线，
-> C 端渲染全链路打通。78 项单测 + 多轮浏览器端到端验证。
-> 实施中相对本文的调整记录在文末「实施偏差」一节。
+> **落地进度（2026-10-19）**：M0 – M4 全部完成。M3 的 SSO 与 COS STS 直传、M4 的多宿主、
+> 性能、监控告警、权限细化、物料版本升级策略均已落地并端到端验证，295 项单测。
+> 实施中相对本文的调整记录在文末「实施偏差」一节，各里程碑的完成情况与踩过的坑见第 9 节。
 
 > Admin（管理后台）+ Designer（拖拽设计器）+ Renderer（C 端渲染器）+ Server（NestJS）
 > 对应架构图：activity-design 全链路架构与业务流程
@@ -324,7 +323,55 @@ renderer 的 `lottery.draw` 动作已接入（写回 `state.prizeIndex`），adm
 活动（create/update/remove/copy/publish/rollback/status）、模板、奖品、渠道的变更接口；
 `GET /audit-logs`（system:manage）+ admin「操作审计」页。草稿自动保存不入审计（太吵）。
 
-剩余：④ SSO、⑥ COS STS。
+**④ 已完成（2026-10-19）**：统一登录（C 端 + 后台）。
+- OIDC 授权码 + PKCE（S256），没引 openid-client：只用「拼授权地址 → 换令牌 → 取 userinfo」三步，
+  身份以 userinfo 为准，不需要本地验 id_token。C 端与后台共用一个回调 `/sso/callback`，靠 state 分流；
+  state 与登录票据走 Redis 一次性取（Lua GET+DEL）。
+- 回跳 URL 只带 60 秒的一次性票据（`nca_ticket`），不带 token；渲染器启动时换 token 并立刻抹掉地址栏里的票据。
+- C 端用户是独立的 `runtime_user`（provider + externalId 唯一），C 端 token 用派生密钥 + `aud=nca-runtime` 签发，
+  与后台 token 互不通用。
+- 宿主登录：桥接返回一次性 code，服务端 POST 到 `HOST_AUTH_VERIFY_URL` 换身份；小程序外层 `wx.login` 换票据。
+  旧协议「桥接直接报 userId」只当访客标识。
+- 活动配置了登录方式（`meta.auth.loginMode ≠ none` 或 `required`）时，抽奖 / 表单 / 预约拒绝访客并返回
+  `reason: LOGIN_REQUIRED`，渲染器据此拉起登录后重试——此前 body 里自报的 userId 换一个就能绕过按人限次。
+- 本地 `SSO_PROVIDER=mock` 是一个按真协议说话的小 IdP，跑的就是对接真实 IdP 的同一套客户端代码；生产环境配 mock 启动即失败。
+- 后台 SSO 首次登录自动开户，只给 `SSO_ADMIN_DEFAULT_ROLE`（缺省只读）——SSO 只证明「你是谁」。
+
+**⑥ 已完成（2026-10-19）**：COS 存储 + STS 临时密钥直传。
+- COS 签名（sha1）与云 API TC3-HMAC-SHA256 自实现，没引两个 SDK；单测期望值由官方 SDK 计算。
+- 直传：`upload-ticket`（按 SHA-256 去重 + 向 STS 申请「只能 PutObject 这一个 key」的临时密钥并预签 PUT）→
+  浏览器直传 → `upload-complete`（HEAD 确认对象到了、大小一致、只认本人签发的 uploadId 才登记）。
+  永久密钥从不出服务端；未配 COS 时回落服务端中转，前端拿到的返回形状一致。
+- 产物与素材按内容寻址，一律 `Cache-Control: immutable`，不需要 CDN 刷新——回滚只切数据库指针。
+- 桶需配跨域规则（见 `.env.example`）。
+
+### M4 完成情况（2026-10-19）
+
+| 项 | 做法 |
+|---|---|
+| 多宿主 | 原生容器注入 `__NCA_HOST__` / `__NCA_BRIDGE__`；iframe 宿主 `?bridge=postmessage` 走消息桥（只认 `window.parent` 的回复）；小程序 web-view 走 JSSDK（登录跳小程序登录页换票据、分享交给小程序页面）；判定优先级：注入 > `?host=` > `__wxjs_environment` > 浏览器，不做 UA 嗅探。接入方式见 [宿主接入文档](host-bridge.md) |
+| 横屏 | 横屏里放竖版稿（设计稿宽 < 1000）收成 9:16 的居中一列、不窄于 375；横版稿按宽缩放 |
+| 宿主专属组件 | 物料 `supportedHosts` 生效：线上不渲染、编辑态照常显示；投放宿主里有不支持的，发布前 warning |
+| 宿主联调 | 设计器顶栏可按任一宿主预览；开发期 `/host-sim.html` 并排跑五个宿主，模拟器扮演宿主一方 |
+| 性能 | 骨架屏、React 分包；index.html 内联脚本在 JS 下载时并行拉 DSL；发布时自动标记首屏关键图片并 preload |
+| 监控 | 每次访问上报一个结局（boot / load_error / dsl_invalid / stall）+ 白屏 / JS 错误；节点级错误边界；后台标签页的访问不计耗时 |
+| 告警 | 规则：窗口 + 阈值 + 最少样本 + 冷却；Redis 锁保证多实例每周期只评估一次；自动定位问题最集中的活动；企业微信 / 飞书 / 钉钉 / 通用 Webhook，按机器人返回码判断送达 |
+| 权限细化 | 数据范围 `activity:all` + 协作成员（负责人 / 编辑 / 只读）；奖品、渠道、报表、审计、监控独立授权；守卫以数据库当前权限为准（缓存 60 秒）；用户与角色管理只能授予自己拥有的权限；审计脱敏 |
+| 物料版本 | 节点记 `type.version`；minor/patch 向后兼容只盖章，major 必须提供 N→N+1 迁移（CI 守卫）；渲染器与设计器读取时懒升级，快照不改；发布拦截「物料比注册表新」；废弃物料两步下线 |
+| 操作审计 | `@Audit` + 全局拦截器 |
+
+### M3 / M4 实施中值得记住的坑
+
+- **StrictMode 下 effect 会跑两遍**：一次性票据换 token、DSL 预取复用都要做成「整个页面只执行一次 / 可重复复用」，
+  否则第二遍拿着作废的票去换、或者再发一次请求。
+- **腾讯云 TC3 签名用的是不带端口的 hostname**（官方 SDK 如此），用 `URL.host` 在非标准端口下会验签失败。
+- **群机器人失败也回 200**，真正的结果在 `errcode` / `code` 里，只看 HTTP 状态会把失败记成已送达。
+- **小程序 web-view 的分享只能交给小程序页面**：页面 postMessage，小程序在 `onShareAppMessage` 里取最后一条。
+- **后台标签页里 rAF 不触发**：首屏耗时会一直算到用户切回来，必须排除，否则 P90 被拉到几分钟。
+- **物料注册表为空时「跳过校验」曾传了空集合**：空 Set 是真值，结果反而拦下了所有发布。
+- **内置角色授权改为只补不删**：新版本加的权限要补给老角色，代价是手工从内置角色上收回的默认权限会被补回。
+- **跨大版本的物料迁移必须以「节点记录的版本」为准**：所有新建节点的路径（设计器、AI 补丁）都要盖上版本号，
+  否则将来升大版本时，这些节点会被当成 1.0.0 再迁移一遍。
 
 ---
 

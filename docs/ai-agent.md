@@ -211,8 +211,12 @@ END
 `activity:edit` / `activity:publish`——出问题时要能单独把 AI 关掉，而不影响运营
 手工搭建。
 
-> 注意 `JwtPayload.permissions` 是登录时快照进 token 的，改完权限重跑 seed 后
-> **需要重新登录**才拿得到 `ai:use`。
+> 权限以数据库当前值为准（守卫每次请求按「权限版本号 + 用户」读取，缓存 60 秒），
+> 改完角色或重跑 seed 后最多一分钟生效，**不必重新登录**。
+>
+> 数据权限同样适用于 AI：绑定了活动的会话（`POST /ai/runs` 带 `activityId`、设计器里的
+> 局部编辑）要求当前用户对该活动有编辑权（负责人 / 编辑成员 / `activity:all`），
+> 校验在开 SSE 流之前做——响应头一旦发出就只能在流里报错了。
 
 ---
 
@@ -338,11 +342,9 @@ LangGraph 官方只提供 SQLite / Postgres / Redis 三种实现，本项目是 
 1. **`build` 节点只让模型出一轮补丁**（`tool_choice` 强制 `apply_patches`），
    没有做「模型看到校验报错后自己改」的回环。目前靠 prompt 里的硬约束 +
    跳过并记账兜住，复杂页面可能有若干条补丁不生效，会在卡片上列出来。
-2. **仅剩 `component.trigger` 动作未接入**。`lottery.draw`（2026-08-06，
-   走 `POST /runtime/lottery/draw`，Redis Lua 原子扣减）、`appointment` 与
-   `form.submit`（2026-08-07，走 `/runtime/appointment`、`/runtime/forms`）均已接入；
-   只有向指定组件派发事件的 `component.trigger` 仍是占位 toast，已写进 prompt
-   黑名单，服务端没有做二次拦截。
+2. ~~业务动作未全部接入~~（已解决）。`lottery.draw`、`appointment`、`form.submit`、
+   `component.trigger`（2026-08-08）均已接入，`login` / `logout` 走 C 端统一登录
+   （2026-10-19）；各动作与 `user` 命名空间的标准接法写在 `llm/prompt.ts` 的硬约束里。
 3. **`computed` 数据源只在挂载时算一次**，不随 state 变化。AI 不能用它做派生值。
 4. **未接 `fallbacks` 参数**。Opus 5 的安全分类器可能拒答（`stop_reason: refusal`），
    当前只是如实报错给运营，没有自动回落到 Opus 4.8。要开的话在
@@ -369,8 +371,7 @@ AI_MAX_PATCHES_PER_RUN=80
 ```bash
 pnpm --filter @nca/server prisma:push      # 建 ai_run / ai_run_step / ai_checkpoint*
 pnpm --filter @nca/server prisma:generate
-pnpm --filter @nca/server seed             # 灌 ai:use / ai:publish 权限码
-# 然后重新登录一次——权限是登录时快照进 token 的
+pnpm --filter @nca/server seed             # 灌 ai:use / ai:publish 权限码（约一分钟内对已登录用户生效）
 ```
 
 **Node 版本**：本仓库 `.nvmrc` 锁 v22.23.1。低于 22.12 的 Node 跑不了渲染器测试
