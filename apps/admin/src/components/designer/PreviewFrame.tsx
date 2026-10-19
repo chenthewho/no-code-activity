@@ -35,6 +35,8 @@ interface Props {
   height: number;
   /** 关掉指针事件：拖拽经过时要让父窗口收到 mousemove */
   interactive?: boolean;
+  /** 以哪个宿主的身份预览：影响 {{ host }} 分支、横屏布局与宿主专属组件的显隐 */
+  host?: string;
   onMessage?: (type: string, payload: Record<string, unknown> | undefined) => void;
 }
 
@@ -45,7 +47,7 @@ interface Props {
  * 各写一套 iframe 承载逻辑迟早会出现「预览正常、画布异常」的分叉。
  */
 export const PreviewFrame = forwardRef<PreviewFrameHandle, Props>(function PreviewFrame(
-  { dsl, width, height, interactive = true, onMessage },
+  { dsl, width, height, interactive = true, host, onMessage },
   ref,
 ) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -104,7 +106,7 @@ export const PreviewFrame = forwardRef<PreviewFrameHandle, Props>(function Previ
       <iframe
         ref={iframeRef}
         title="设计器画布"
-        src={`${RENDERER_ORIGIN}/?preview=1`}
+        src={`${RENDERER_ORIGIN}/?preview=1${host ? `&host=${encodeURIComponent(host)}` : ''}`}
         style={{
           display: 'block',
           width: '100%',

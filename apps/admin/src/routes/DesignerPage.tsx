@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Input, Layout, Modal, Spin, Tabs, message } from 'antd';
+import { Alert, Input, Layout, Modal, Spin, Tabs, message } from 'antd';
 import { ApartmentOutlined, AppstoreOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { validateFinalDsl } from '@nca/dsl';
+import { HOST_TYPE, type HostType } from '@nca/shared';
 import { describeUpgrade, materialVersions, upgradeMaterials } from '@nca/materials';
 import { activityApi, materialApi } from '../api';
 import { useDesignerStore } from '../stores/designer';
@@ -26,6 +27,9 @@ const DEVICE_SIZE: Record<DeviceMode, { width: number; height: number }> = {
   mobile: { width: 375, height: 667 },
 };
 
+/** 横屏宿主预览时画布转成横向，看得到竖版稿被收成一列的真实效果 */
+const LANDSCAPE_SIZE = { width: 667, height: 375 };
+
 const RENDERER_ORIGIN = import.meta.env.VITE_RENDERER_ORIGIN ?? 'http://localhost:5180';
 
 export function DesignerPage() {
@@ -41,6 +45,7 @@ export function DesignerPage() {
   const [rightTabKey, setRightTabKey] = useState(0);
   const [aiOpen, setAiOpen] = useState(false);
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
+  const [previewHost, setPreviewHost] = useState<HostType>(HOST_TYPE.BROWSER);
 
   const { data: metas = [], isLoading: metaLoading } = useQuery({
     queryKey: ['materials'],
@@ -191,10 +196,18 @@ export function DesignerPage() {
    * 本地跑一遍发布级校验，把「发布前必须补齐」的项即时呈现在顶栏。
    * 与后端调用的是 @nca/dsl 里同一个 validateFinalDsl，规则不可能不一致。
    */
-  const blockingIssues = useMemo(() => {
-    const result = validateFinalDsl(dsl, { mode: 'publish' });
-    return result.issues.filter((i) => i.level === 'error');
-  }, [dsl]);
+  const { blockingIssues, hostWarnings } = useMemo(() => {
+    const result = validateFinalDsl(dsl, {
+      mode: 'publish',
+      // 与服务端同一份注册表口径：物料版本与宿主支持都取自 /materials
+      materialVersions: Object.fromEntries(metas.map((m) => [m.name, m.version])),
+      materialHosts: Object.fromEntries(metas.map((m) => [m.name, m.supportedHosts])),
+    });
+    return {
+      blockingIssues: result.issues.filter((i) => i.level === 'error'),
+      hostWarnings: result.issues.filter((i) => i.level === 'warning' && i.message.includes('不会显示')),
+    };
+  }, [dsl, metas]);
 
   const handlePublish = () => {
     if (blockingIssues.length > 0) {
@@ -223,7 +236,7 @@ export function DesignerPage() {
     );
   }
 
-  const size = DEVICE_SIZE[device];
+  const size = previewHost === HOST_TYPE.SDK_LANDSCAPE ? LANDSCAPE_SIZE : DEVICE_SIZE[device];
 
   return (
     <Layout style={{ height: '100vh' }}>
@@ -235,6 +248,8 @@ export function DesignerPage() {
         issues={blockingIssues}
         device={device}
         onDeviceChange={setDevice}
+        previewHost={previewHost}
+        onPreviewHostChange={setPreviewHost}
         onBack={() => void navigate({ to: '/activities' })}
         onSave={() => saveMutation.mutate()}
         onPublish={handlePublish}
@@ -304,6 +319,7 @@ export function DesignerPage() {
             onSelectNode={handleSelectFromCanvas}
             designWidth={size.width}
             canvasHeight={size.height}
+            host={previewHost}
           />
         </Layout.Content>
 
@@ -344,6 +360,21 @@ export function DesignerPage() {
         okText="确认发布"
       >
         <p style={{ color: '#888' }}>发布会生成一个不可变的版本快照，可随时回滚。</p>
+        {hostWarnings.length > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="部分组件在某些投放宿主里不会显示"
+            description={
+              <ul style={{ paddingLeft: 18, margin: 0 }}>
+                {hostWarnings.map((w, i) => (
+                  <li key={i}>{w.message}</li>
+                ))}
+              </ul>
+            }
+          />
+        )}
         <Input.TextArea
           rows={3}
           placeholder="本次发布说明（选填）"

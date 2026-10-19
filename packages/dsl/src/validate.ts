@@ -33,6 +33,11 @@ export interface ValidateOptions {
    * 线上渲染器可能还不认识新 props——发布时必须拦住，而不是上线后才发现组件错乱。
    */
   materialVersions?: Readonly<Record<string, string>>;
+  /**
+   * 物料名 → 支持的宿主（缺省表示全部支持）。投放宿主里有物料不支持的，提示一条 warning：
+   * 页面照样能发，只是那个组件在该宿主里不会显示。
+   */
+  materialHosts?: Readonly<Record<string, readonly string[] | undefined>>;
 }
 
 /**
@@ -117,6 +122,24 @@ function checkIntegrity(dsl: FinalDsl, options: ValidateOptions): DslIssue[] {
         level: 'warning',
         path: `craftJson.${id}`,
         message: '孤儿节点：无法从 ROOT 到达，不会被渲染',
+      });
+    }
+  }
+
+  if (options.materialHosts) {
+    const warned = new Set<string>();
+    for (const [id, node] of Object.entries(tree)) {
+      const name = node.type.resolvedName;
+      const supported = options.materialHosts[name];
+      if (!supported || supported.length === 0 || warned.has(name)) continue;
+      const missing = dsl.meta.hosts.filter((h) => !supported.includes(h));
+      if (missing.length === 0) continue;
+      warned.add(name);
+      issues.push({
+        level: 'warning',
+        path: `craftJson.${id}.type.resolvedName`,
+        nodeId: id,
+        message: `组件「${node.displayName ?? name}」只支持 ${supported.join('、')}，在 ${missing.join('、')} 中不会显示`,
       });
     }
   }

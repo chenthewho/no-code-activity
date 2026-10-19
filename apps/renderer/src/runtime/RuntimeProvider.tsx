@@ -279,16 +279,21 @@ export function RuntimeProvider({
           await refreshDataSource(action.dataSourceId);
           return;
 
-        case 'share':
-          await host.share(action);
+        case 'share': {
+          const result = await host.share(action);
+          if (result?.hint) pushToast(result.hint, 'info', 2500);
           return;
+        }
 
         case 'game.download':
           if (editing) {
             pushToast('预览态不执行下载', 'info', 2000);
             return;
           }
-          await host.downloadGame(action.gameId);
+          {
+            const result = await host.downloadGame(action.gameId);
+            if (result?.hint) pushToast(result.hint, 'info', 2500);
+          }
           return;
 
         case 'login':
@@ -479,6 +484,12 @@ export function RuntimeProvider({
       if (dsl.meta.auth.required && !userRef.current) void ensureLogin();
     });
   }, [commitUser, dsl.meta.auth.required, editing, ensureLogin]);
+
+  // 投放宿主里没有当前宿主：多半是链接被转发到了没测过的环境，照常渲染但留下线索
+  useEffect(() => {
+    if (editing || dsl.meta.hosts.includes(host.type)) return;
+    console.warn(`[nca] 当前宿主 ${host.type} 不在该活动的投放宿主 ${dsl.meta.hosts.join(', ')} 中`);
+  }, [dsl.meta.hosts, editing, host.type]);
 
   // 埋点初始化 + 页面曝光（PV）。只在真实浏览（非编辑预览）时记。
   useEffect(() => {

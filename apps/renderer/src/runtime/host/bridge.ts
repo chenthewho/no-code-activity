@@ -1,4 +1,5 @@
 import type { HostType } from '@nca/shared';
+import { createPostMessageBridge, postMessageBridgeEnabled } from './post-message-bridge';
 import type { HostAdapter, HostLoginResult } from './types';
 
 /**
@@ -24,8 +25,20 @@ declare global {
   }
 }
 
+let postMessageBridge: HostBridge | undefined;
+
+/**
+ * 能力桥接的来源：原生容器注入的 window.__NCA_BRIDGE__ 优先；
+ * 嵌在 iframe 里且显式开启了 postMessage 桥（?bridge=postmessage）时走消息通道。
+ */
 function bridge(): HostBridge | undefined {
-  return typeof window !== 'undefined' ? window.__NCA_BRIDGE__ : undefined;
+  if (typeof window === 'undefined') return undefined;
+  if (window.__NCA_BRIDGE__) return window.__NCA_BRIDGE__;
+  if (postMessageBridgeEnabled()) {
+    postMessageBridge ??= createPostMessageBridge();
+    return postMessageBridge;
+  }
+  return undefined;
 }
 
 /**

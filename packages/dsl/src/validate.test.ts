@@ -206,3 +206,16 @@ describe('validateFinalDsl · 物料版本', () => {
     expect(validateFinalDsl(dsl, { materialVersions: { Button: '2.0.0' } }).success).toBe(true);
   });
 });
+
+describe('validateFinalDsl · 宿主', () => {
+  it('投放宿主里有物料不支持的，给出 warning 但不拦截', () => {
+    const dsl = baseDsl();
+    dsl.meta.hosts = ['browser', 'wechat_mini_program'];
+    const result = validateFinalDsl(dsl, { materialHosts: { Button: ['browser', 'sdk_portrait'] } });
+    expect(result.success).toBe(true);
+    expect(result.issues).toEqual([
+      expect.objectContaining({ level: 'warning', nodeId: 'btn_1', message: expect.stringMatching(/wechat_mini_program 中不会显示/) }),
+    ]);
+    expect(validateFinalDsl(dsl, { materialHosts: { Button: undefined } }).issues).toEqual([]);
+  });
+});

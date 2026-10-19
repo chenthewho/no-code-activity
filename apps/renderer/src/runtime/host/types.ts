@@ -17,6 +17,11 @@ export interface HostLoginResult {
   redirecting?: boolean;
 }
 
+/** 宿主动作的附加结果：需要提示用户时带一句话，由运行时用 toast 展示 */
+export interface HostActionResult {
+  hint?: string;
+}
+
 /**
  * 宿主适配层。同一份 DSL 要跑在浏览器、游戏中心、SDK 横竖屏、小程序 web-view 里，
  * 差异全部收敛到这个接口，Renderer 主体不出现任何 if (isWechat) 之类的判断。
@@ -27,9 +32,14 @@ export interface HostAdapter {
   login(): Promise<HostLoginResult | null>;
   /** 宿主侧的登出；本地登录态由运行时自己清，这里只通知宿主 */
   logout?(): Promise<void>;
-  share(payload: { title?: string; desc?: string; cover?: string; channel?: string }): Promise<void>;
+  share(payload: {
+    title?: string;
+    desc?: string;
+    cover?: string;
+    channel?: string;
+  }): Promise<HostActionResult | void>;
   navigate(url: string, target: '_self' | '_blank'): void;
-  downloadGame(gameId: string): Promise<void>;
+  downloadGame(gameId: string): Promise<HostActionResult | void>;
   /** 宿主私有能力，method 由各适配器白名单裁决，未授权直接拒绝 */
   invoke(method: string, params?: Record<string, unknown>): Promise<unknown>;
 }

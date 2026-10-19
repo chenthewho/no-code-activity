@@ -1,4 +1,4 @@
-import { Button, Divider, Segmented, Space, Tag, Tooltip, Upload, message } from 'antd';
+import { Button, Divider, Segmented, Select, Space, Tag, Tooltip, Upload, message } from 'antd';
 import {
   ArrowLeftOutlined,
   CloudUploadOutlined,
@@ -18,7 +18,7 @@ import {
   UndoOutlined,
 } from '@ant-design/icons';
 import { validateFinalDsl, type FinalDsl } from '@nca/dsl';
-import { ROOT_NODE_ID } from '@nca/shared';
+import { HOST_LABELS, HOST_TYPE, ROOT_NODE_ID, type HostType } from '@nca/shared';
 import { useDesignerStore } from '../../stores/designer';
 import { IssueIndicator } from './IssuePanel';
 import type { DslIssue } from '@nca/dsl';
@@ -33,6 +33,9 @@ interface Props {
   issues: DslIssue[];
   device: DeviceMode;
   onDeviceChange: (device: DeviceMode) => void;
+  /** 以哪个宿主预览画布 */
+  previewHost: HostType;
+  onPreviewHostChange: (host: HostType) => void;
   onBack: () => void;
   onSave: () => void;
   onPublish: () => void;
@@ -59,6 +62,8 @@ export function DesignerHeader({
   issues,
   device,
   onDeviceChange,
+  previewHost,
+  onPreviewHostChange,
   onBack,
   onSave,
   onPublish,
@@ -170,6 +175,15 @@ export function DesignerHeader({
               { value: 'mobile', icon: <MobileOutlined /> },
             ]}
           />
+          <Tooltip title="以该宿主的身份预览：{{ host }} 分支、横屏布局、宿主专属组件都按它来">
+            <Select
+              size="small"
+              value={previewHost}
+              onChange={onPreviewHostChange}
+              style={{ width: 120 }}
+              options={Object.values(HOST_TYPE).map((value) => ({ value, label: HOST_LABELS[value] }))}
+            />
+          </Tooltip>
         </Space>
 
         <Button type="text" size="small" icon={<NodeIndexOutlined />} onClick={onOpenEvents}>

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>宿主模拟器</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; background: #f0f2f5; color: #262626; }
+      header { padding: 12px 20px; background: #001529; color: #fff; display: flex; gap: 12px; align-items: center; }
+      header input { width: 280px; padding: 4px 8px; }
+      main { display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; align-items: flex-start; }
+      .host { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); padding: 12px; }
+      .host h3 { margin: 0 0 4px; font-size: 14px; }
+      .host .desc { color: #8c8c8c; font-size: 12px; margin-bottom: 8px; }
+      .host iframe { border: 1px solid #f0f0f0; display: block; }
+      .log { margin-top: 8px; height: 120px; overflow: auto; font: 12px/1.5 ui-monospace, monospace; background: #fafafa; padding: 6px; }
+      .log div { white-space: pre-wrap; word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>宿主模拟器</strong>
+      <span style="opacity:.7">同一份 DSL 在多个宿主里并排跑，本页扮演宿主一方，回应桥接调用</span>
+      <input id="activity" placeholder="活动 id" />
+      <button id="load">加载</button>
+    </header>
+    <main id="hosts"></main>
+    <script type="module" src="/src/dev/host-sim.ts"></script>
+  </body>
+</html>

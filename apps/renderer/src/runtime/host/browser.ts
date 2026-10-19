@@ -2,6 +2,7 @@ import { HOST_TYPE, type HostType } from '@nca/shared';
 import { fetchAuthConfig, ssoLoginUrl } from '../auth';
 import type { HostAdapter } from './types';
 import { createBridgeHost } from './bridge';
+import { createWechatMiniProgramHost, isMiniProgramEnv } from './wechat-mp';
 
 /** 浏览器宿主：能力最少的基线实现，其它宿主在此之上补 SDK 桥接 */
 export const browserHost: HostAdapter = {
@@ -53,29 +54,34 @@ export const browserHost: HostAdapter = {
   },
 };
 
-/** 需要走宿主桥接的宿主类型；其余回落 browser */
+/** 走能力桥接（注入对象或 postMessage）的宿主类型；小程序走 JSSDK，单独适配 */
 const BRIDGE_HOSTS: HostType[] = [
   HOST_TYPE.GAME_CENTER,
   HOST_TYPE.LDQ_PC,
   HOST_TYPE.LDQ_APP,
   HOST_TYPE.SDK_LANDSCAPE,
   HOST_TYPE.SDK_PORTRAIT,
-  HOST_TYPE.WECHAT_MINI_PROGRAM,
 ];
 
-export function detectHost(): HostAdapter {
-  // 宿主容器注入的全局标识优先级最高；其次 ?host= 便于开发预览指定宿主。
-  // UA 嗅探不可靠（微信 H5 与小程序 web-view 的 UA 一样），不做。
-  const injected =
-    typeof window !== 'undefined' ? (window as unknown as { __NCA_HOST__?: HostType }).__NCA_HOST__ : undefined;
-  const urlHost =
-    typeof window !== 'undefined'
-      ? (new URLSearchParams(window.location.search).get('host') as HostType | null)
-      : null;
-  const type = injected ?? urlHost ?? undefined;
+/**
+ * 判定当前宿主，优先级：宿主容器注入的 __NCA_HOST__ > 地址上的 ?host=（预览与 iframe 宿主）>
+ * 微信设置的 __wxjs_environment（小程序 web-view）> 浏览器。
+ * 不做 UA 嗅探：微信 H5 与小程序 web-view 的 UA 一模一样，靠它分不出来。
+ */
+export function resolveHostType(): HostType {
+  if (typeof window === 'undefined') return HOST_TYPE.BROWSER;
+  const injected = window.__NCA_HOST__;
+  const urlHost = new URLSearchParams(window.location.search).get('host') as HostType | null;
+  const known = Object.values(HOST_TYPE) as string[];
+  if (injected && known.includes(injected)) return injected;
+  if (urlHost && known.includes(urlHost)) return urlHost;
+  if (isMiniProgramEnv()) return HOST_TYPE.WECHAT_MINI_PROGRAM;
+  return HOST_TYPE.BROWSER;
+}
 
-  if (type && BRIDGE_HOSTS.includes(type)) {
-    return createBridgeHost(type);
-  }
+export function detectHost(): HostAdapter {
+  const type = resolveHostType();
+  if (type === HOST_TYPE.WECHAT_MINI_PROGRAM) return createWechatMiniProgramHost();
+  if (BRIDGE_HOSTS.includes(type)) return createBridgeHost(type);
   return browserHost;
 }

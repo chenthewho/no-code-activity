@@ -75,7 +75,7 @@ function SingleNode({
   node: CraftNode;
   skipLoop?: boolean;
 }) {
-  const { dsl, buildContext, emit, editing, openModals } = useRuntime();
+  const { dsl, buildContext, emit, editing, openModals, host } = useRuntime();
   const scope = useContext(ScopeContext);
   const ctx = buildContext(scope);
 
@@ -92,6 +92,11 @@ function SingleNode({
     ) : null;
   }
 
+  // 物料声明了只在部分宿主可用：线上在其它宿主里直接不渲染；编辑态照常显示，否则没法搭
+  const material = getMaterial(node.type.resolvedName);
+  const supported = material?.meta.supportedHosts;
+  if (!editing && supported && supported.length > 0 && !supported.includes(host.type)) return null;
+
   const props = resolveProps(node.props, ctx);
   const runtimeProps = injectRuntimeProps(node, nodeId, openModals);
 
@@ -103,7 +108,6 @@ function SingleNode({
   // 具名插槽：物料声明了哪些 slot，就把 linkedNodes 里挂进去的子节点渲染出来，
   // 以 slotContent 命名空间交给物料自行摆放
   const slotContent: Record<string, ReactNode> = {};
-  const material = getMaterial(node.type.resolvedName);
   for (const slot of material?.meta.slots ?? []) {
     const slotNodeId = node.linkedNodes?.[slot];
     if (slotNodeId && dsl.craftJson[slotNodeId]) {

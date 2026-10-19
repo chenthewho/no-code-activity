@@ -9,6 +9,8 @@ interface Props {
   onSelectNode?: (nodeId: string) => void;
   designWidth?: number;
   canvasHeight?: number;
+  /** 预览宿主；切换时整个 iframe 重建，渲染器按新宿主重新初始化 */
+  host?: string;
 }
 
 /**
@@ -22,6 +24,7 @@ export function IframeCanvasSurface({
   onSelectNode,
   designWidth = 375,
   canvasHeight = 667,
+  host,
 }: Props) {
   const frameRef = useRef<PreviewFrameHandle>(null);
   const selectedId = useDesignerStore((s) => s.selectedId);
@@ -200,6 +203,8 @@ export function IframeCanvasSurface({
       {/* 相对定位，好让弹窗开关贴着手机框右侧浮着 */}
       <div style={{ position: 'relative' }}>
         <PreviewFrame
+          key={host ?? 'browser'}
+          host={host}
           ref={frameRef}
           dsl={dsl}
           width={designWidth}
