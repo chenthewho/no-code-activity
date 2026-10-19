@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compareVersion, migrateDsl, type MigrateResult } from './migrate';
 import type { Migration } from './migrate';
+import { DSL_SCHEMA_VERSION } from './version';
 
 type Raw = Record<string, unknown>;
 
@@ -17,12 +18,20 @@ function baseDsl(schemaVersion: string): Raw {
 
 describe('migrateDsl', () => {
   it('当前版本且无迁移时原样返回，不产生任何改动', () => {
-    const input = baseDsl('1.0.0');
+    const input = baseDsl(DSL_SCHEMA_VERSION);
     const result = migrateDsl(input);
     expect(result.applied).toEqual([]);
-    expect(result.from).toBe('1.0.0');
-    expect(result.to).toBe('1.0.0');
+    expect(result.from).toBe(DSL_SCHEMA_VERSION);
+    expect(result.to).toBe(DSL_SCHEMA_VERSION);
     expect(result.dsl).toEqual(input);
+  });
+
+  it('默认迁移链把 1.0.0 的存量 DSL 推到当前版本，结构原样保留', () => {
+    const input = baseDsl('1.0.0');
+    const result = migrateDsl(input);
+    expect(result.applied).toEqual(['1.0.0→1.1.0']);
+    expect(result.to).toBe(DSL_SCHEMA_VERSION);
+    expect(result.dsl.craftJson).toEqual(input.craftJson);
   });
 
   it('沿迁移链逐级推进，旧版本最终到当前版本', () => {

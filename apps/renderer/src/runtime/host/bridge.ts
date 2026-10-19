@@ -1,12 +1,14 @@
 import type { HostType } from '@nca/shared';
-import type { HostAdapter } from './types';
+import type { HostAdapter, HostLoginResult } from './types';
 
 /**
  * 宿主容器注入的桥接对象。SDK / game_center / 小程序 web-view 会把能力挂到
  * window.__NCA_BRIDGE__ 上；桥接缺失时（开发预览、纯浏览器）回落浏览器行为并提示。
  */
 export interface HostBridge {
-  login?(): Promise<{ userId: string } | null>;
+  /** 拉起宿主登录，返回一次性 code（推荐）或票据；见 docs/host-bridge.md */
+  login?(): Promise<HostLoginResult | null>;
+  logout?(): Promise<void>;
   share?(payload: { title?: string; desc?: string; cover?: string; channel?: string }): Promise<void>;
   navigate?(url: string, target?: string): void;
   downloadGame?(gameId: string): Promise<void>;
@@ -45,6 +47,14 @@ export function createBridgeHost(type: HostType): HostAdapter {
       }
       console.info(`[nca] ${type} 宿主暂未注入 login 桥接`);
       return null;
+    },
+
+    async logout() {
+      try {
+        await bridge()?.logout?.();
+      } catch (err) {
+        console.warn(`[nca] ${type} 宿主 logout 失败`, err);
+      }
     },
 
     async share(payload) {

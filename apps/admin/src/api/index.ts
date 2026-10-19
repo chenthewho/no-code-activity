@@ -9,7 +9,19 @@ export const authApi = {
       body: { username, password },
     }),
   me: () => request<CurrentUser>('/auth/me'),
+  ssoConfig: () => request<{ enabled: boolean; label: string }>('/auth/sso/config'),
+  ssoExchange: (ticket: string) =>
+    request<{ token: string; user: CurrentUser }>('/auth/sso/exchange', {
+      method: 'POST',
+      body: { ticket },
+    }),
 };
+
+/** 后台 SSO 入口：整页跳到服务端，由它 302 去 IdP */
+export function adminSsoUrl(redirect: string): string {
+  const base = import.meta.env.VITE_API_BASE ?? 'http://localhost:3100/api/v1';
+  return `${base}/auth/sso/authorize?redirect=${encodeURIComponent(redirect)}`;
+}
 
 export interface ActivityListQuery {
   page?: number;

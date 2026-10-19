@@ -52,6 +52,21 @@ export class RedisService implements OnModuleDestroy {
     this.memoryStore.set(key, { value, expireAt: ttlMs !== undefined ? Date.now() + ttlMs : Infinity });
   }
 
+  /**
+   * 取出并删除，原子完成。一次性凭据（登录票据、授权码）必须走这里：
+   * 先 get 再 del 的话，两个并发请求能拿同一张票各换一次。
+   */
+  async take(key: string): Promise<string | null> {
+    if (this.client) {
+      const script = `local v = redis.call('GET', KEYS[1])\nif v then redis.call('DEL', KEYS[1]) end\nreturn v`;
+      const result = await this.client.eval(script, 1, key);
+      return typeof result === 'string' ? result : null;
+    }
+    const value = await this.get(key);
+    this.memoryStore.delete(key);
+    return value;
+  }
+
   async del(key: string): Promise<void> {
     if (this.client) {
       await this.client.del(key);

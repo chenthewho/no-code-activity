@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { DslAction, FinalDsl } from '@nca/dsl';
+import type { RuntimeUserProfile } from '@nca/shared';
 import type { ExpressionContext } from './expression';
 import { resolveCondition, resolveValue } from './props-parser';
 import {
@@ -19,6 +20,13 @@ import {
 } from './datasource';
 import { detectHost } from './host/browser';
 import { drawLottery, getOrCreateGuestId, submitForm, bookAppointment } from './api';
+import {
+  LoginRequiredError,
+  clearRuntimeToken,
+  exchangeTicket,
+  hostLogin,
+  restoreLogin,
+} from './auth';
 import { initAnalytics, trackAnalytics } from './analytics';
 import { ROOT_NODE_ID } from '@nca/shared';
 import type { HostAdapter } from './host/types';
@@ -33,6 +41,8 @@ interface RuntimeValue {
   dsl: FinalDsl;
   editing: boolean;
   host: HostAdapter;
+  /** C 端登录用户，未登录为 null */
+  user: RuntimeUserProfile | null;
   pageState: Record<string, unknown>;
   dataSources: DataSourceMap;
   openModals: string[];
@@ -49,6 +59,20 @@ export function useRuntime(): RuntimeValue {
   const value = useContext(RuntimeContext);
   if (!value) throw new Error('useRuntime 必须在 RuntimeProvider 内使用');
   return value;
+}
+
+/**
+ * 表达式里的 user 命名空间。未登录时也给全字段（空串），
+ * 运营写 {{ user.nickname }} 不会在未登录时渲染出 undefined。
+ */
+function toUserContext(user: RuntimeUserProfile | null) {
+  return {
+    loggedIn: Boolean(user),
+    id: user?.id ?? '',
+    nickname: user?.nickname ?? '',
+    avatar: user?.avatar ?? '',
+    provider: user?.provider ?? '',
+  };
 }
 
 export interface RuntimeProviderProps {
@@ -80,6 +104,15 @@ export function RuntimeProvider({
   const [openModals, setOpenModals] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastSeq = useRef(0);
+  const [user, setUser] = useState<RuntimeUserProfile | null>(null);
+  // 同 ctxRef：动作是异步串行的，登录完成后紧随其后的动作要立刻读到新用户
+  const userRef = useRef<RuntimeUserProfile | null>(null);
+  /** 旧协议宿主自报的 userId，只当访客标识，不算登录 */
+  const legacyIdRef = useRef<string | null>(null);
+  /** 启动时的登录态恢复；业务动作先等它，避免刚回跳就以访客身份抽了一次奖 */
+  const authReadyRef = useRef<Promise<unknown>>(Promise.resolve());
+  /** 进行中的登录，连点两次「登录」只拉起一次 */
+  const loginRef = useRef<Promise<RuntimeUserProfile | null> | null>(null);
   // runAction 先于 emit 定义，component.trigger 又要调 emit——用 ref 绕开循环依赖
   const emitRef = useRef<(nodeId: string, event: string, payload?: Record<string, unknown>) => void>(() => {});
 
@@ -103,6 +136,7 @@ export function RuntimeProvider({
       query,
       // 宿主标识：同一 DSL 可在不同宿主上按 {{ host === 'sdk_portrait' }} 分支
       host: host.type,
+      user: toUserContext(userRef.current),
       ...scope,
     }),
     [dsl.meta, host, query],
@@ -115,6 +149,63 @@ export function RuntimeProvider({
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, duration);
   }, []);
+
+  const commitUser = useCallback((next: RuntimeUserProfile | null) => {
+    userRef.current = next;
+    setUser(next);
+  }, []);
+
+  /**
+   * 确保已登录：已登录直接返回；否则交给宿主拉起登录，拿回的 code/票据
+   * 一律到服务端换 C 端 token。返回 null 表示没登上（宿主不支持、正在整页跳转）。
+   */
+  const ensureLogin = useCallback(async (): Promise<RuntimeUserProfile | null> => {
+    await authReadyRef.current;
+    if (userRef.current) return userRef.current;
+    loginRef.current ??= (async () => {
+      try {
+        const result = await host.login();
+        if (!result) {
+          pushToast('当前环境暂不支持登录', 'warning', 2500);
+          return null;
+        }
+        if (result.redirecting) return null;
+        let profile: RuntimeUserProfile | null = null;
+        if (result.ticket) profile = await exchangeTicket(result.ticket);
+        else if (result.code) profile = await hostLogin(host.type, result.code);
+        else if (result.userId) legacyIdRef.current = result.userId;
+        if (profile) commitUser(profile);
+        return profile;
+      } catch (err) {
+        console.error('[nca] 登录失败', err);
+        pushToast(err instanceof Error ? err.message : '登录失败', 'error', 3000);
+        return null;
+      } finally {
+        loginRef.current = null;
+      }
+    })();
+    return loginRef.current;
+  }, [commitUser, host, pushToast]);
+
+  /**
+   * 以「当前参与者」身份调业务接口。登录用户靠请求头里的 token 识别，
+   * 这里传的只是访客标识；服务端判定该活动必须登录时拉起登录，登上后重试一次。
+   */
+  const withParticipant = useCallback(
+    async <T,>(call: (guestId: string) => Promise<T>): Promise<T> => {
+      await authReadyRef.current;
+      const guestId = legacyIdRef.current ?? getOrCreateGuestId();
+      try {
+        return await call(guestId);
+      } catch (err) {
+        if (!(err instanceof LoginRequiredError)) throw err;
+        const profile = await ensureLogin();
+        if (!profile) throw err;
+        return call(guestId);
+      }
+    },
+    [ensureLogin],
+  );
 
   const closeModal = useCallback((modalId?: string) => {
     setOpenModals((prev) => (modalId ? prev.filter((id) => id !== modalId) : prev.slice(0, -1)));
@@ -201,7 +292,19 @@ export function RuntimeProvider({
           return;
 
         case 'login':
-          await host.login();
+          if (editing) {
+            pushToast('预览态不执行登录', 'info', 2000);
+            return;
+          }
+          await ensureLogin();
+          return;
+
+        case 'logout':
+          if (editing) return;
+          clearRuntimeToken();
+          legacyIdRef.current = null;
+          commitUser(null);
+          await host.logout?.();
           return;
 
         case 'sdk.invoke':
@@ -219,9 +322,8 @@ export function RuntimeProvider({
             return;
           }
           const activityId = dsl.meta.activityId;
-          const userId = (await host.login())?.userId ?? getOrCreateGuestId();
           try {
-            const result = await drawLottery(activityId, userId);
+            const result = await withParticipant((guestId) => drawLottery(activityId, guestId));
             if (result.won) {
               commitPageState('prizeIndex', result.index);
               commitPageState('prizeResult', result.prize);
@@ -232,8 +334,11 @@ export function RuntimeProvider({
               commitPageState('prizeResult', null);
             }
           } catch (err) {
-            console.error('[nca] 抽奖失败', err);
-            pushToast(err instanceof Error ? err.message : '抽奖失败', 'error', 3000);
+            // 没登上的情况登录流程自己已经提示过（或正在跳转登录页），不再叠一条
+            if (!(err instanceof LoginRequiredError)) {
+              console.error('[nca] 抽奖失败', err);
+              pushToast(err instanceof Error ? err.message : '抽奖失败', 'error', 3000);
+            }
             commitPageState('prizeIndex', -1);
           }
           return;
@@ -253,12 +358,14 @@ export function RuntimeProvider({
             return;
           }
           const activityId = dsl.meta.activityId;
-          const userId = (await host.login())?.userId ?? getOrCreateGuestId();
           try {
-            await submitForm({ activityId, formNodeId, userId, data: values });
+            await withParticipant((guestId) =>
+              submitForm({ activityId, formNodeId, userId: guestId, data: values }),
+            );
             trackAnalytics('convert', (ctx as { nodeId?: string }).nodeId, { type: 'form' });
             pushToast('提交成功', 'success', 2500);
           } catch (err) {
+            if (err instanceof LoginRequiredError) return;
             console.error('[nca] 表单提交失败', err);
             pushToast(err instanceof Error ? err.message : '提交失败', 'error', 3000);
           }
@@ -278,9 +385,10 @@ export function RuntimeProvider({
             return;
           }
           const activityId = dsl.meta.activityId;
-          const userId = (await host.login())?.userId ?? getOrCreateGuestId();
           try {
-            const result = await bookAppointment({ activityId, sceneId, userId });
+            const result = await withParticipant((guestId) =>
+              bookAppointment({ activityId, sceneId, userId: guestId }),
+            );
             if (!result.already) {
               trackAnalytics('convert', (ctx as { nodeId?: string }).nodeId, { type: 'appointment' });
             }
@@ -290,6 +398,7 @@ export function RuntimeProvider({
               2500,
             );
           } catch (err) {
+            if (err instanceof LoginRequiredError) return;
             console.error('[nca] 预约失败', err);
             pushToast(err instanceof Error ? err.message : '预约失败', 'error', 3000);
           }
@@ -312,7 +421,19 @@ export function RuntimeProvider({
           return;
       }
     },
-    [buildContext, closeModal, commitPageState, editing, host, pushToast, refreshDataSource],
+    [
+      buildContext,
+      closeModal,
+      commitPageState,
+      commitUser,
+      dsl.meta.activityId,
+      editing,
+      ensureLogin,
+      host,
+      pushToast,
+      refreshDataSource,
+      withParticipant,
+    ],
   );
 
   const emit = useCallback(
@@ -345,6 +466,19 @@ export function RuntimeProvider({
   );
   // emit 就绪后回填到 ref，component.trigger 才能派发到任意节点
   emitRef.current = emit;
+
+  // 恢复登录态：SSO 回跳的票据换 token，或用本地 token 取回用户。
+  // 页面配置了「进页面即要求登录」时，恢复不出用户就立刻拉起登录。
+  useEffect(() => {
+    if (editing) return;
+    const ready = restoreLogin().then((profile) => {
+      if (profile) commitUser(profile);
+    });
+    authReadyRef.current = ready;
+    void ready.then(() => {
+      if (dsl.meta.auth.required && !userRef.current) void ensureLogin();
+    });
+  }, [commitUser, dsl.meta.auth.required, editing, ensureLogin]);
 
   // 埋点初始化 + 页面曝光（PV）。只在真实浏览（非编辑预览）时记。
   useEffect(() => {
@@ -394,6 +528,7 @@ export function RuntimeProvider({
       dsl,
       editing,
       host,
+      user,
       pageState,
       dataSources,
       openModals: visibleModals,
@@ -406,6 +541,7 @@ export function RuntimeProvider({
       dsl,
       editing,
       host,
+      user,
       pageState,
       dataSources,
       visibleModals,

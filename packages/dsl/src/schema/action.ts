@@ -119,6 +119,12 @@ const login = z.object({
   type: z.literal('login'),
 });
 
+/** 退出 C 端登录：清掉本地登录态，宿主有自己的登出能力时一并调用 */
+const logout = z.object({
+  ...actionBase,
+  type: z.literal('logout'),
+});
+
 /** 宿主 SDK 能力调用，method 由各 HostAdapter 的白名单裁决 */
 const sdkInvoke = z.object({
   ...actionBase,
@@ -141,6 +147,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   share,
   gameDownload,
   login,
+  logout,
   sdkInvoke,
 ]);
 
@@ -180,6 +187,7 @@ export const REQUIRED_ACTION_FIELDS: Record<DslActionType, string[]> = {
   'form.submit': ['formNodeId'],
   share: [],
   login: [],
+  logout: [],
   'game.download': ['gameId'],
   'sdk.invoke': ['method'],
 };

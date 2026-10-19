@@ -1,6 +1,16 @@
 import { z } from 'zod';
 
 /**
+ * 布尔开关。z.coerce.boolean 会把字符串 "false" 也当成 true（非空即真），
+ * 写进 .env 的开关全都得走这里。
+ */
+const envBool = (fallback: boolean) =>
+  z
+    .enum(['true', 'false', '1', '0', ''])
+    .optional()
+    .transform((v) => (v === undefined || v === '' ? fallback : v === 'true' || v === '1'));
+
+/**
  * 环境变量集中校验：缺关键配置就在启动时炸掉，
  * 而不是等某个接口第一次被调用才在线上暴露。
  */
@@ -41,6 +51,63 @@ const envSchema = z.object({
   ACTIVITY_BASE_URL: z.string().default('http://localhost:5180'),
 
   /**
+   * 服务端对外的 API 根地址（含前缀）。SSO 回调地址由它拼出，必须是 IdP 能
+   * 302 回来的公网地址——反向代理后面的服务自己推断不出来，只能显式配。
+   */
+  PUBLIC_API_BASE_URL: z.string().default('http://localhost:3100/api/v1'),
+  /** 管理后台站点根，后台 SSO 登录完成后跳回这里 */
+  ADMIN_BASE_URL: z.string().default('http://localhost:5173'),
+
+  /**
+   * 统一登录（OIDC 授权码 + PKCE）。
+   * none —— 不开启；oidc —— 对接真实 IdP；mock —— 服务端自带的模拟 IdP，
+   * 只为本地把「跳转 → 回调 → 换票」整条链路跑通，生产环境禁用。
+   */
+  SSO_PROVIDER: z.enum(['none', 'oidc', 'mock']).default('none'),
+  /** 配了 issuer 就走 .well-known 自动发现，下面三个端点可省 */
+  SSO_ISSUER: z.string().optional(),
+  SSO_AUTHORIZE_URL: z.string().optional(),
+  SSO_TOKEN_URL: z.string().optional(),
+  SSO_USERINFO_URL: z.string().optional(),
+  SSO_CLIENT_ID: z.string().optional(),
+  SSO_CLIENT_SECRET: z.string().optional(),
+  SSO_SCOPE: z.string().default('openid profile'),
+  /** 登录按钮上展示的名字，如「公司统一账号」 */
+  SSO_LABEL: z.string().default('统一登录'),
+  /** userinfo 里各字段的取法，不同 IdP 命名不一 */
+  SSO_CLAIM_USER_ID: z.string().default('sub'),
+  SSO_CLAIM_USERNAME: z.string().default('preferred_username'),
+  SSO_CLAIM_NICKNAME: z.string().default('name'),
+  SSO_CLAIM_AVATAR: z.string().default('picture'),
+  /** 后台是否允许 SSO 登录；首次登录自动建号并授予这个角色 */
+  SSO_ADMIN_ENABLED: envBool(true),
+  SSO_ADMIN_DEFAULT_ROLE: z.string().default('viewer'),
+
+  /**
+   * C 端登录态。与后台 token 用不同的密钥签发——两种 token 互相拿不过去，
+   * 活动页上的用户永远摸不到管理接口。缺省由 JWT_SECRET 派生。
+   */
+  RUNTIME_JWT_SECRET: z.string().min(16).optional(),
+  RUNTIME_JWT_EXPIRES_IN: z
+    .string()
+    .regex(/^\d+(s|m|h|d|w|y)$/, 'RUNTIME_JWT_EXPIRES_IN 形如 30d / 12h')
+    .default('30d'),
+  /** 允许 SSO 登录后跳回的活动页源，逗号分隔；缺省只认 ACTIVITY_BASE_URL 的源 */
+  RUNTIME_REDIRECT_ORIGINS: z.string().optional(),
+
+  /**
+   * 宿主登录：SDK / 游戏中心等宿主拉起自家登录后给一个一次性 code，
+   * 服务端拿它去宿主账号服务换用户身份。
+   * none —— 不开启；http —— POST 到 HOST_AUTH_VERIFY_URL 校验；
+   * mock —— 接受形如 mock:<userId> 的 code，仅限本地联调。
+   */
+  HOST_AUTH_MODE: z.enum(['none', 'http', 'mock']).default('none'),
+  HOST_AUTH_VERIFY_URL: z.string().optional(),
+  /** 微信小程序：web-view 外层用 wx.login 的 code 换活动页登录票据 */
+  WECHAT_MP_APPID: z.string().optional(),
+  WECHAT_MP_SECRET: z.string().optional(),
+
+  /**
    * AI 助手。key 一律 optional——没配 key 的本地环境要能照常起服务、跑测试，
    * 只是调 AI 接口时才报错。这里写成必填的话，所有不碰 AI 的人都会被卡在启动。
    */
@@ -75,7 +142,19 @@ export function validateEnv(raw: Record<string, unknown>): AppConfig {
     const detail = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('\n  ');
     throw new Error(`环境变量校验失败：\n  ${detail}`);
   }
-  return result.data;
+  const env = result.data;
+  // 模拟登录是给本地联调开的后门，带进生产等于任何人都能冒充任意用户
+  if (env.NODE_ENV === 'production') {
+    if (env.SSO_PROVIDER === 'mock') throw new Error('生产环境禁止 SSO_PROVIDER=mock');
+    if (env.HOST_AUTH_MODE === 'mock') throw new Error('生产环境禁止 HOST_AUTH_MODE=mock');
+  }
+  if (env.SSO_PROVIDER === 'oidc' && !env.SSO_CLIENT_ID) {
+    throw new Error('SSO_PROVIDER=oidc 时必须配置 SSO_CLIENT_ID');
+  }
+  if (env.HOST_AUTH_MODE === 'http' && !env.HOST_AUTH_VERIFY_URL) {
+    throw new Error('HOST_AUTH_MODE=http 时必须配置 HOST_AUTH_VERIFY_URL');
+  }
+  return env;
 }
 
 export function corsOrigins(value: string): string[] | true {

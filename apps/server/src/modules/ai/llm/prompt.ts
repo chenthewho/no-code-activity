@@ -51,7 +51,8 @@ const HARD_RULES = `
 ## 表达式语法（\`{{ }}\`）
 
 可用命名空间：\`state\`、\`dataSource\`、\`meta\`、\`query\`、\`host\`（\`{{ host === 'sdk_portrait' }}\`
-可做多宿主差异化展示）；循环子树里额外有 \`item\` / \`index\`；http 数据源的 transform 里有 \`response\`。
+可做多宿主差异化展示）、\`user\`（C 端登录用户：\`user.loggedIn\` / \`user.nickname\` / \`user.avatar\` / \`user.id\`，
+未登录时 loggedIn 为 false、其余为空串）；循环子树里额外有 \`item\` / \`index\`；http 数据源的 transform 里有 \`response\`。
 
 支持：成员访问、下标、字面量、\`! - +\`、\`+ - * / %\`、比较、\`== != === !==\`、
 \`&& || ??\`、三元、括号、\`.length\`。
@@ -70,7 +71,10 @@ const HARD_RULES = `
   8 个奖品。标准编排是 onCustom \`draw\` → \`[state.set 下标=-1, dataSource.refresh 抽奖接口,
   state.set 下标={{ dataSource.xxx.index }}]\`。**开抽前必须先置回 -1**，否则第二次
   点击会立刻停在上一轮结果。中奖后用 onCustom \`finish\` 开弹窗。
-- **Login**：\`logged\` 绑登录态。物料只抛 \`login\` 事件，真正登录靠 \`{ type: 'login' }\` 动作。
+- **Login**：\`mode\` 设为 \`'action'\`、\`localSession\` 设为 false，\`logged\` 绑 \`{{ user.loggedIn }}\`，
+  \`nickname\` / \`avatar\` 绑 \`{{ user.nickname }}\` / \`{{ user.avatar }}\`。onCustom \`login\` →
+  \`{ type: 'login' }\`（浏览器走统一登录跳转，宿主里走宿主登录）；onCustom \`logout\` → \`{ type: 'logout' }\`。
+  登录是否必需由页面设置决定，不要自己用 state 模拟登录态。
 - **BindRole**：\`servers\` / \`roles\` / \`boundRole\` 都从数据源绑。
   onCustom \`serverChange\` → 刷新角色数据源；onCustom \`bind\` → 刷新已绑定数据源。
 

@@ -9,7 +9,7 @@ type RawDsl = Record<string, unknown>;
  *   2. 这里补一条 { from, to, up } —— 只做纯函数式结构改写
  * 半年前发布的活动页因此永远能被今天的 Renderer 打开。
  */
-interface Migration {
+export interface Migration {
   from: string;
   to: string;
   up: (dsl: RawDsl) => RawDsl;
@@ -21,8 +21,13 @@ interface Migration {
  * 导出是为了单测注入假迁移链验证推进逻辑，正常使用走默认参数。
  */
 export const DSL_MIGRATIONS: Migration[] = [
-  // 1.0.0 是首版，暂无迁移。示例：
-  // { from: '1.0.0', to: '1.1.0', up: (dsl) => ({ ...dsl, schemaVersion: '1.1.0', ... }) },
+  /**
+   * 1.1.0：新增 logout 动作、节点上的物料版本（type.version）。
+   * 都是可选的增量字段，旧结构原样合法，不需要改写；升版本号是为了让
+   * 还没升级的旧渲染器遇到新 DSL 时明确报「请升级渲染器」，而不是在
+   * 一个不认识的动作上校验失败、给运营一个莫名其妙的错误页。
+   */
+  { from: '1.0.0', to: '1.1.0', up: (dsl) => dsl },
 ];
 
 export interface MigrateResult {

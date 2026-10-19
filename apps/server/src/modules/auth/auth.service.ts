@@ -1,22 +1,106 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { CurrentUser, Permission } from '@nca/shared';
 import * as argon2 from 'argon2';
+import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import type { OidcProfile } from '../sso/oidc.client';
+import { SsoService } from '../sso/sso.service';
 import type { JwtPayload } from './auth.types';
 
+const USER_WITH_PERMISSIONS = {
+  roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
+} as const;
+
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+    private readonly sso: SsoService,
   ) {}
 
+  onModuleInit(): void {
+    this.sso.register('admin', (profile, redirect) => this.completeSso(profile, redirect));
+  }
+
+  get ssoEnabled(): boolean {
+    return this.sso.enabled && this.config.get<boolean>('SSO_ADMIN_ENABLED') !== false;
+  }
+
+  ssoConfig(): { enabled: boolean; label: string } {
+    return { enabled: this.ssoEnabled, label: this.sso.label };
+  }
+
+  /** 后台 SSO 只允许跳回站内路径：拼在 ADMIN_BASE_URL 后面，杜绝开放重定向 */
+  async beginSso(redirect: string | undefined): Promise<string> {
+    if (!this.ssoEnabled) throw new BadRequestException('后台未开启统一登录');
+    const path = redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/activities';
+    return this.sso.begin('admin', path);
+  }
+
+  async exchangeSsoTicket(ticket: string): Promise<{ token: string; user: CurrentUser }> {
+    const { userId } = await this.sso.consumeTicket<{ userId: string }>('admin', ticket);
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: USER_WITH_PERMISSIONS });
+    if (!user?.enabled) throw new UnauthorizedException('账号不可用');
+    const payload = this.buildPayload(user);
+    return { token: await this.issueToken(payload), user: await this.getProfile(user.id) };
+  }
+
+  /**
+   * IdP 认证通过后的后台建号。首次登录自动开户并授予默认角色（缺省只读），
+   * 真正的权限由管理员在「用户管理」里再分配——SSO 只证明「你是谁」，
+   * 不该顺带决定「你能干什么」。
+   */
+  private async completeSso(profile: OidcProfile, redirect: string): Promise<string> {
+    let user = await this.prisma.user.findUnique({ where: { ssoId: profile.id } });
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          username: await this.availableUsername(profile.username ?? `sso_${profile.id}`),
+          nickname: profile.nickname ?? profile.username ?? profile.id,
+          avatar: profile.avatar ?? null,
+          ssoId: profile.id,
+          password: null,
+        },
+      });
+      const roleCode = this.config.get<string>('SSO_ADMIN_DEFAULT_ROLE') ?? 'viewer';
+      const role = await this.prisma.role.findUnique({ where: { code: roleCode } });
+      if (role) {
+        await this.prisma.userRole.create({ data: { userId: user.id, roleId: role.id } });
+      } else {
+        this.logger.warn(`SSO_ADMIN_DEFAULT_ROLE=${roleCode} 不存在，新用户 ${user.username} 没有任何角色`);
+      }
+      this.logger.log(`SSO 首次登录，已开户 ${user.username}`);
+    }
+    if (!user.enabled) throw new ForbiddenException('账号已被停用，请联系管理员');
+
+    const ticket = await this.sso.issueTicket('admin', { userId: user.id });
+    const base = (this.config.get<string>('ADMIN_BASE_URL') ?? 'http://localhost:5173').replace(/\/$/, '');
+    const target = new URL(`${base}/login`);
+    target.searchParams.set('sso_ticket', ticket);
+    target.searchParams.set('redirect', redirect);
+    return target.toString();
+  }
+
+  /** IdP 的用户名可能与本地账号撞名，撞了就补个随机后缀，不覆盖任何人 */
+  private async availableUsername(preferred: string): Promise<string> {
+    const base = preferred.replace(/[^\w.@-]/g, '_').slice(0, 40) || 'sso_user';
+    let candidate = base;
+    for (let i = 0; i < 5; i++) {
+      const taken = await this.prisma.user.findUnique({ where: { username: candidate } });
+      if (!taken) return candidate;
+      candidate = `${base}_${randomBytes(2).toString('hex')}`;
+    }
+    return `${base}_${randomBytes(6).toString('hex')}`;
+  }
+
   async validateUser(username: string, password: string): Promise<JwtPayload> {
-    const user = await this.prisma.user.findUnique({
-      where: { username },
-      include: { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } },
-    });
+    const user = await this.prisma.user.findUnique({ where: { username }, include: USER_WITH_PERMISSIONS });
 
     // 用户不存在与密码错误返回同一句提示，避免账号枚举
     if (!user?.password || !user.enabled) {
@@ -35,10 +119,7 @@ export class AuthService {
   }
 
   async getProfile(userId: string): Promise<CurrentUser> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } },
-    });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: USER_WITH_PERMISSIONS });
     if (!user) throw new UnauthorizedException('用户不存在');
 
     const payload = this.buildPayload(user);

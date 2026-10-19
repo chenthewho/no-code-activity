@@ -1,17 +1,17 @@
+import { API_BASE } from './api-base';
+import { LoginRequiredError, authHeaders } from './auth';
+
 /**
- * C 端访问 API 服务端的入口配置与业务接口封装。
- *
- * API_BASE 是唯一一个「renderer 知道服务端地址」的地方：数据源相对 URL、
- * 抽奖动作都从这里解析。生产走 CDN 时通过 VITE_API_BASE 注入，缺省指回本地。
+ * C 端业务接口封装。登录用户的身份由请求头里的 C 端 token 决定；
+ * body 里的 userId 只是访客标识，活动不要求登录时服务端才会采用。
  */
-export const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3100/api/v1';
+export { API_BASE };
 
 const GUEST_KEY = 'nca:guest-id';
 
 /**
- * C 端当前没有 SSO 前的稳定用户标识：首次访问生成一个访客 id 存 localStorage，
- * 供 limitPerUser 与防刷在服务端按人计数。将来 host.login() 返回真实 userId 后
- * 用它替换，访客 id 只作兜底。
+ * 访客标识：首次访问生成一个随机 id 存 localStorage，供不要求登录的活动按人计数。
+ * 它是客户端自报的，能被随意更换——需要防刷的活动应在页面设置里开启登录。
  */
 export function getOrCreateGuestId(): string {
   try {
@@ -26,6 +26,29 @@ export function getOrCreateGuestId(): string {
   }
 }
 
+/**
+ * 业务写接口统一走这里：带上登录态，错误体里的 message 抽出来给 toast 用，
+ * 服务端判定「该活动需要登录」时抛 LoginRequiredError，由运行时拉起登录后重试。
+ */
+async function postRuntime<T>(path: string, body: unknown, fallbackError: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      message?: string;
+      reason?: string;
+    } | null;
+    if (response.status === 401 && payload?.reason === 'LOGIN_REQUIRED') {
+      throw new LoginRequiredError(payload.message);
+    }
+    throw new Error(payload?.message || `${fallbackError} (${response.status})`);
+  }
+  return (await response.json()) as T;
+}
+
 export interface DrawResult {
   won: boolean;
   index: number;
@@ -34,17 +57,12 @@ export interface DrawResult {
 }
 
 /** 调 C 端抽奖接口。返回裸 JSON（runtime 接口 markRaw 不包 code/data） */
-export async function drawLottery(activityId: string, userId: string): Promise<DrawResult> {
-  const response = await fetch(`${API_BASE}/runtime/lottery/draw`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ activityId, userId }),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(text || `抽奖请求失败 (${response.status})`);
-  }
-  return (await response.json()) as DrawResult;
+export function drawLottery(activityId: string, guestId: string): Promise<DrawResult> {
+  return postRuntime<DrawResult>(
+    '/runtime/lottery/draw',
+    { activityId, userId: guestId },
+    '抽奖请求失败',
+  );
 }
 
 /** 表单提交：把 Form 物料收集的字段值上报到 POST /runtime/forms */
@@ -54,15 +72,7 @@ export async function submitForm(input: {
   userId?: string;
   data: Record<string, unknown>;
 }): Promise<void> {
-  const response = await fetch(`${API_BASE}/runtime/forms`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(text || `提交失败 (${response.status})`);
-  }
+  await postRuntime<unknown>('/runtime/forms', input, '提交失败');
 }
 
 export interface AppointmentResult {
@@ -72,20 +82,11 @@ export interface AppointmentResult {
 }
 
 /** 活动预约：一人一场次一次，重复预约返回 already */
-export async function bookAppointment(input: {
+export function bookAppointment(input: {
   activityId: string;
   sceneId: string;
-  userId: string;
+  userId?: string;
   contact?: string;
 }): Promise<AppointmentResult> {
-  const response = await fetch(`${API_BASE}/runtime/appointment`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(text || `预约失败 (${response.status})`);
-  }
-  return (await response.json()) as AppointmentResult;
+  return postRuntime<AppointmentResult>('/runtime/appointment', input, '预约失败');
 }

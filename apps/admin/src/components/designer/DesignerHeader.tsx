@@ -13,6 +13,7 @@ import {
   RobotOutlined,
   RedoOutlined,
   SaveOutlined,
+  SettingOutlined,
   ThunderboltOutlined,
   UndoOutlined,
 } from '@ant-design/icons';
@@ -37,6 +38,7 @@ interface Props {
   onPublish: () => void;
   onPreview: () => void;
   onOpenEvents: () => void;
+  onOpenPageSettings: () => void;
   onSaveAsTemplate: () => void;
   onToggleAi: () => void;
   aiOpen: boolean;
@@ -62,6 +64,7 @@ export function DesignerHeader({
   onPublish,
   onPreview,
   onOpenEvents,
+  onOpenPageSettings,
   onSaveAsTemplate,
   onToggleAi,
   aiOpen,
@@ -172,6 +175,12 @@ export function DesignerHeader({
         <Button type="text" size="small" icon={<NodeIndexOutlined />} onClick={onOpenEvents}>
           活动编排
         </Button>
+
+        <Tooltip title="适配、投放宿主、参与者登录、分享与主题">
+          <Button type="text" size="small" icon={<SettingOutlined />} onClick={onOpenPageSettings}>
+            页面设置
+          </Button>
+        </Tooltip>
 
         <Button type="text" size="small" icon={<EyeOutlined />} onClick={onPreview}>
           预览

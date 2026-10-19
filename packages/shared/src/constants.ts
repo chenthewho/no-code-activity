@@ -27,6 +27,17 @@ export const HOST_TYPE = {
 
 export type HostType = (typeof HOST_TYPE)[keyof typeof HOST_TYPE];
 
+/** 宿主的中文名，后台的投放配置、宿主预览与报表共用 */
+export const HOST_LABELS: Record<HostType, string> = {
+  [HOST_TYPE.BROWSER]: '浏览器 / H5',
+  [HOST_TYPE.GAME_CENTER]: '游戏中心',
+  [HOST_TYPE.LDQ_PC]: 'LDQ PC 端',
+  [HOST_TYPE.LDQ_APP]: 'LDQ App',
+  [HOST_TYPE.SDK_PORTRAIT]: 'SDK 竖屏',
+  [HOST_TYPE.SDK_LANDSCAPE]: 'SDK 横屏',
+  [HOST_TYPE.WECHAT_MINI_PROGRAM]: '微信小程序',
+};
+
 /** 物料分类，决定工具箱分组 */
 export const MATERIAL_CATEGORY = {
   BASIC: 'basic',

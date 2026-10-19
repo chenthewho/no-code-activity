@@ -15,6 +15,7 @@ import { formatIssues } from '../components/designer/IssuePanel';
 import { DesignerHeader, type DeviceMode } from '../components/designer/DesignerHeader';
 import { SaveAsTemplateModal } from '../components/designer/SaveAsTemplateModal';
 import { AiPanel } from '../components/designer/AiPanel';
+import { PageSettingsModal } from '../components/designer/PageSettingsModal';
 
 const AUTOSAVE_DELAY = 1500;
 
@@ -38,6 +39,7 @@ export function DesignerPage() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [rightTabKey, setRightTabKey] = useState(0);
   const [aiOpen, setAiOpen] = useState(false);
+  const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
 
   const { data: metas = [], isLoading: metaLoading } = useQuery({
     queryKey: ['materials'],
@@ -216,6 +218,7 @@ export function DesignerPage() {
         onPublish={handlePublish}
         onPreview={() => window.open(`${RENDERER_ORIGIN}/?id=${activityId}`, '_blank')}
         onOpenEvents={() => setLeftTab('data')}
+        onOpenPageSettings={() => setPageSettingsOpen(true)}
         onSaveAsTemplate={() => {
           // 模板取的是服务端草稿，先把当前编辑落库，否则存进去的是上一次自动保存的内容
           saveMutation.mutate(undefined, { onSuccess: () => setSavingTemplate(true) });
@@ -300,6 +303,8 @@ export function DesignerPage() {
           </Layout.Sider>
         )}
       </Layout>
+
+      <PageSettingsModal open={pageSettingsOpen} onClose={() => setPageSettingsOpen(false)} />
 
       <SaveAsTemplateModal
         open={savingTemplate}

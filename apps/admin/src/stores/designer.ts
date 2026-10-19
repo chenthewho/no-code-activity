@@ -115,6 +115,11 @@ interface DesignerState {
 
   // 结构容器
   updateControl: (nodeId: string, control: NodeControl | undefined) => void;
+  /**
+   * 页面级配置（适配、投放宿主、登录、分享、主题）。标题与活动时间不在此列——
+   * 它们以活动基础信息为准，保存草稿时由服务端盖章，这里改了也会被覆盖。
+   */
+  updateMeta: (patch: Partial<Pick<FinalDsl['meta'], 'page' | 'hosts' | 'auth' | 'share' | 'theme'>>) => void;
 
   undo: () => void;
   redo: () => void;
@@ -532,6 +537,11 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
         craftJson: { ...state.dsl.craftJson, [nodeId]: nextNode },
       }),
     );
+  },
+
+  updateMeta(patch) {
+    const state = get();
+    set(commit(state, { ...state.dsl, meta: { ...state.dsl.meta, ...patch } }));
   },
 
   undo() {

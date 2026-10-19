@@ -31,7 +31,10 @@ async function requireAuth(permissions: Permission[] = []) {
   }
   const current = useAuthStore.getState();
   if (!current.user) {
-    throw redirect({ to: '/login', search: { redirect: window.location.pathname } });
+    throw redirect({
+      to: '/login',
+      search: { redirect: window.location.pathname, sso_ticket: undefined },
+    });
   }
   if (permissions.length > 0 && !current.can(...permissions)) {
     throw redirect({ to: '/activities' });
@@ -44,6 +47,8 @@ const loginRoute = createRoute({
   component: LoginPage,
   validateSearch: (search: Record<string, unknown>) => ({
     redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
+    /** SSO 回跳带回的一次性票据 */
+    sso_ticket: typeof search.sso_ticket === 'string' ? search.sso_ticket : undefined,
   }),
 });
 

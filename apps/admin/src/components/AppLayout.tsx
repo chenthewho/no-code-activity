@@ -88,7 +88,10 @@ export function AppLayout() {
                 label: '退出登录',
                 onClick: () => {
                   logout();
-                  void navigate({ to: '/login', search: { redirect: undefined } });
+                  void navigate({
+                    to: '/login',
+                    search: { redirect: undefined, sso_ticket: undefined },
+                  });
                 },
               },
             ],

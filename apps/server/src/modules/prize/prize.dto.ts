@@ -21,9 +21,12 @@ export const updatePrizeSchema = createPrizeSchema
   .extend({ probability: z.number().int().min(0).max(10000).optional() });
 export type UpdatePrizeDto = z.infer<typeof updatePrizeSchema>;
 
-/** C 端抽奖请求：活动 + 用户标识 */
+/**
+ * C 端抽奖请求。登录用户的身份取自 C 端 token，body 里的 userId 只在
+ * 活动不要求登录时作为访客标识使用——它是客户端自报的，不可信。
+ */
 export const drawSchema = z.object({
   activityId: z.string().min(1),
-  userId: z.string().min(1).max(128),
+  userId: z.string().min(1).max(128).optional(),
 });
 export type DrawDto = z.infer<typeof drawSchema>;

@@ -9,6 +9,8 @@ interface AuthState {
   /** 未完成首次校验前为 true，路由守卫据此避免误判为未登录而闪跳登录页 */
   initializing: boolean;
   login: (username: string, password: string) => Promise<void>;
+  /** SSO 回跳带回的一次性票据换登录态 */
+  loginWithSsoTicket: (ticket: string) => Promise<void>;
   logout: () => void;
   restore: () => Promise<void>;
   can: (...permissions: Permission[]) => boolean;
@@ -20,6 +22,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   async login(username, password) {
     const { token, user } = await authApi.login(username, password);
+    setToken(token);
+    set({ user, initializing: false });
+  },
+
+  async loginWithSsoTicket(ticket) {
+    const { token, user } = await authApi.ssoExchange(ticket);
     setToken(token);
     set({ user, initializing: false });
   },

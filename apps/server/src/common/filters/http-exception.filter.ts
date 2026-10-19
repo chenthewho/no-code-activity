@@ -22,6 +22,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     let message = '服务器内部错误';
     let errors: unknown;
+    /** 机器可读的原因码，如 LOGIN_REQUIRED——客户端按它分支，不去匹配中文文案 */
+    let reason: string | undefined;
 
     if (exception instanceof HttpException) {
       const body = exception.getResponse();
@@ -31,6 +33,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const record = body as Record<string, unknown>;
         message = typeof record.message === 'string' ? record.message : exception.message;
         errors = record.errors;
+        if (typeof record.reason === 'string') reason = record.reason;
       }
     } else if (exception instanceof Error) {
       // 未预期的异常不把内部细节回给客户端，只写日志
@@ -42,6 +45,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message,
       data: null,
       ...(errors ? { errors } : {}),
+      ...(reason ? { reason } : {}),
     });
   }
 }

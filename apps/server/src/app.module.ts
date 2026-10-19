@@ -15,6 +15,8 @@ import { ChannelModule } from './modules/channel/channel.module';
 import { MaterialModule } from './modules/material/material.module';
 import { PrizeModule } from './modules/prize/prize.module';
 import { RuntimeModule } from './modules/runtime/runtime.module';
+import { RuntimeAuthModule } from './modules/runtime-auth/runtime-auth.module';
+import { SsoModule } from './modules/sso/sso.module';
 import { TemplateModule } from './modules/template/template.module';
 
 @Module({
@@ -26,7 +28,9 @@ import { TemplateModule } from './modules/template/template.module';
     }),
     PrismaModule,
     RedisModule,
+    SsoModule,
     AuthModule,
+    RuntimeAuthModule,
     ActivityModule,
     AnalyticsModule,
     AssetModule,

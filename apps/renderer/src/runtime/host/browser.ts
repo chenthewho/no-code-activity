@@ -1,4 +1,5 @@
 import { HOST_TYPE, type HostType } from '@nca/shared';
+import { fetchAuthConfig, ssoLoginUrl } from '../auth';
 import type { HostAdapter } from './types';
 import { createBridgeHost } from './bridge';
 
@@ -6,10 +7,20 @@ import { createBridgeHost } from './bridge';
 export const browserHost: HostAdapter = {
   type: HOST_TYPE.BROWSER,
 
+  /**
+   * 浏览器走统一登录：整页跳去 IdP，登录完带一次性票据跳回当前地址，
+   * 由运行时在启动时换成 token。服务端没开 SSO 时返回 null，交给运行时提示。
+   */
   async login() {
-    // 浏览器环境走 SSO 跳转，回跳后由 AuthRuntime 从 URL/Cookie 取回登录态
-    console.info('[nca] browser 宿主暂未接入 SSO 跳转');
-    return null;
+    try {
+      const config = await fetchAuthConfig();
+      if (!config.sso) return null;
+    } catch (err) {
+      console.warn('[nca] 获取登录配置失败', err);
+      return null;
+    }
+    window.location.assign(ssoLoginUrl(window.location.href));
+    return { redirecting: true };
   },
 
   async share(payload) {

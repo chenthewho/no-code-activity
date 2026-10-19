@@ -32,6 +32,11 @@ export const craftNodeSchema = z.object({
   type: z.object({
     /** 物料名，必须能在 componentMap 里解析到 */
     resolvedName: z.string().min(1),
+    /**
+     * 创建/最近一次升级该节点时的物料版本。缺省视为 1.0.0（版本字段出现之前的存量节点）。
+     * 物料大版本升级时，渲染器与设计器据此沿物料迁移链改写 props，见 @nca/materials 的 versioning。
+     */
+    version: z.string().optional(),
   }),
   /** 是否为可投放子节点的画布容器 */
   isCanvas: z.boolean().default(false),

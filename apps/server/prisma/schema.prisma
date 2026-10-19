@@ -74,6 +74,24 @@ model RolePermission {
   @@map("role_permission")
 }
 
+/// C 端用户：活动页上的参与者，与后台的 User 是两套身份，互不相通。
+/// 同一个人从不同来源登录（SSO / 小程序 / 某个宿主）是不同的行——各来源的
+/// 用户 id 不在一个命名空间里，强行合并只会把两个人认成一个人。
+model RuntimeUser {
+  id          String   @id @default(cuid())
+  /// 身份来源：sso / wechat_mp / 宿主类型（sdk_portrait、game_center…）
+  provider    String   @db.VarChar(32)
+  /// 来源系统里的用户 id（OIDC 的 sub、小程序的 openid/unionid、宿主账号 id）
+  externalId  String   @db.VarChar(128)
+  nickname    String?
+  avatar      String?  @db.VarChar(1024)
+  createdAt   DateTime @default(now())
+  lastLoginAt DateTime @default(now())
+
+  @@unique([provider, externalId])
+  @@map("runtime_user")
+}
+
 // ---------- 活动 ----------
 
 enum ActivityStatus {
