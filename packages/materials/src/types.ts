@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { MaterialMeta } from '@nca/dsl';
+import type { MaterialMigration } from './versioning';
 
 /**
  * 渲染器注入给每个物料的运行时能力。
@@ -25,6 +26,8 @@ export type MaterialComponentProps<P> = P & MaterialInjectedProps;
 export interface MaterialDefinition<P = Record<string, unknown>> {
   meta: MaterialMeta;
   Component: ComponentType<MaterialComponentProps<P>>;
+  /** 大版本升级时的 props 迁移，规则见 versioning.ts */
+  migrations?: readonly MaterialMigration[];
 }
 
 /** 便于各物料文件定型，同时保证 meta 与组件 props 同源维护 */

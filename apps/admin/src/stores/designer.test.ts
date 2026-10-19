@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createEmptyDsl } from '@nca/dsl';
 import { ROOT_NODE_ID } from '@nca/shared';
+import { getMaterial } from '@nca/materials';
 import { useDesignerStore } from './designer';
 
 const store = () => useDesignerStore.getState();
@@ -10,6 +11,12 @@ beforeEach(() => {
 });
 
 describe('addNode', () => {
+  it('新节点记下物料代码的当前版本，物料将来升大版本时才不会被重复迁移', () => {
+    store().addNode('Login', {});
+    const node = store().dsl.craftJson[store().selectedId!]!;
+    expect(node.type).toEqual({ resolvedName: 'Login', version: getMaterial('Login')!.meta.version });
+  });
+
   it('新节点挂到根下并自动选中', () => {
     store().addNode('Text', { content: '你好' });
     const { dsl, selectedId } = store();

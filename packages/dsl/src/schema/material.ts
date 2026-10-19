@@ -85,6 +85,17 @@ export const materialMetaSchema = z.object({
   defaultProps: z.record(z.string(), jsonValue).default({}),
   /** 仅在这些宿主可用，缺省表示全部宿主可用 */
   supportedHosts: z.array(z.string()).optional(),
+  /**
+   * 已废弃：工具箱不再提供，已有节点照常渲染。物料的下线分两步——先废弃让
+   * 新活动不再用它，等存量活动都下线了再从代码里删除。
+   */
+  deprecated: z
+    .object({
+      reason: z.string().optional(),
+      /** 建议替换成哪个物料 */
+      replacedBy: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type MaterialMeta = z.infer<typeof materialMetaSchema>;

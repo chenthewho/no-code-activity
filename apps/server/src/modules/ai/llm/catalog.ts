@@ -17,6 +17,8 @@ export interface MaterialCatalog {
   names: ReadonlySet<string>;
   /** 可以接子节点的物料 */
   containers: ReadonlySet<string>;
+  /** 物料名 → 当前版本，AI 新建的节点据此记下物料版本 */
+  versions: Readonly<Record<string, string>>;
   /** 渲染好的说明书，直接塞进 system prompt */
   text: string;
 }
@@ -79,14 +81,15 @@ export async function loadMaterialCatalog(prisma: PrismaService): Promise<Materi
   for (const row of rows) {
     const parsed = materialMetaSchema.safeParse(row.meta);
     // 表里存的是发版时同步进去的快照，理论上不会坏；真坏了也只跳过这一个，
-    // 不能让整个 AI 功能因为一条脏数据起不来
-    if (parsed.success) materials.push(parsed.data);
+    // 不能让整个 AI 功能因为一条脏数据起不来。废弃物料不再给模型——它只用于新建
+    if (parsed.success && !parsed.data.deprecated) materials.push(parsed.data);
   }
 
   return {
     materials,
     names: new Set(materials.map((m) => m.name)),
     containers: new Set(materials.filter((m) => m.isContainer).map((m) => m.name)),
+    versions: Object.fromEntries(materials.map((m) => [m.name, m.version])),
     text: materials.map(renderMaterial).join('\n\n'),
   };
 }

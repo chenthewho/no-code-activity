@@ -16,6 +16,7 @@ import { AiWorkbenchPage } from './AiWorkbenchPage';
 import { AuditLogPage } from './AuditLogPage';
 import { UserManagePage } from './UserManagePage';
 import { RoleManagePage } from './RoleManagePage';
+import { MaterialManagePage } from './MaterialManagePage';
 import { useAuthStore } from '../stores/auth';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -112,6 +113,13 @@ const userRoute = createRoute({
   beforeLoad: () => requireAuth([PERMISSION.USER_MANAGE]),
 });
 
+const materialRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/system/materials',
+  component: MaterialManagePage,
+  beforeLoad: () => requireAuth([PERMISSION.MATERIAL_MANAGE]),
+});
+
 const roleRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/system/roles',
@@ -139,6 +147,7 @@ const routeTree = rootRoute.addChildren([
     auditRoute,
     userRoute,
     roleRoute,
+    materialRoute,
   ]),
 ]);
 

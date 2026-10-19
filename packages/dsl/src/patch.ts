@@ -144,6 +144,11 @@ export interface ApplyPatchesOptions {
   containerMaterials?: ReadonlySet<string> | readonly string[];
   /** 注入确定性 id 生成器，测试用 */
   createNodeId?: (material: string) => string;
+  /**
+   * 物料名 → 当前版本。新建节点据此记下物料版本：不记的话，物料将来升大版本时
+   * 这些节点会被当成 1.0.0 再迁移一遍，props 被改写成错的形状。
+   */
+  materialVersions?: Readonly<Record<string, string>>;
 }
 
 export interface ApplyPatchesResult {
@@ -321,8 +326,9 @@ export function applyPatches(
         }
 
         const id = makeId(patch.material);
+        const version = options.materialVersions?.[patch.material];
         const node: CraftNode = {
-          type: { resolvedName: patch.material },
+          type: { resolvedName: patch.material, ...(version ? { version } : {}) },
           isCanvas: containers?.has(patch.material) ?? false,
           props: patch.props,
           custom: {},

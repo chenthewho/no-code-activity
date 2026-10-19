@@ -381,3 +381,23 @@ describe('补丁协议 · 与既有校验器对齐', () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe('补丁协议 · 物料版本', () => {
+  it('新建节点记下物料当前版本，没登记版本的物料不写', () => {
+    const { dsl } = applyPatches(
+      base(),
+      parse([
+        { op: 'addNode', ref: '@a', material: 'Lottery', props: {}, position: { mode: 'appendTo', target: ROOT_NODE_ID } },
+        { op: 'addNode', ref: '@b', material: 'Text', props: {}, position: { mode: 'appendTo', target: ROOT_NODE_ID } },
+      ]),
+      {
+        knownMaterials: MATERIALS,
+        containerMaterials: CONTAINERS,
+        createNodeId: (m) => m.toLowerCase(),
+        materialVersions: { Lottery: '2.1.0' },
+      },
+    );
+    expect(dsl.craftJson.lottery!.type).toEqual({ resolvedName: 'Lottery', version: '2.1.0' });
+    expect(dsl.craftJson.text!.type).toEqual({ resolvedName: 'Text' });
+  });
+});

@@ -4,6 +4,7 @@ import { ApartmentOutlined, AppstoreOutlined, DatabaseOutlined } from '@ant-desi
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { validateFinalDsl } from '@nca/dsl';
+import { describeUpgrade, materialVersions, upgradeMaterials } from '@nca/materials';
 import { activityApi, materialApi } from '../api';
 import { useDesignerStore } from '../stores/designer';
 import { MaterialPanel } from '../components/designer/MaterialPanel';
@@ -51,8 +52,29 @@ export function DesignerPage() {
     queryFn: () => activityApi.getDraft(activityId),
   });
 
+  // 打开草稿时把旧版物料的节点升到当前版本：先原样载入，有改动再作为一步可撤销的
+  // 编辑应用上去——会触发自动保存，下次打开就不用再升了
   useEffect(() => {
-    if (draft) load(draft);
+    if (!draft) return;
+    load(draft);
+    const upgraded = upgradeMaterials(draft, materialVersions);
+    if (upgraded.changed) useDesignerStore.getState().applyDsl(upgraded.dsl);
+    const { migrated, blocked, newer } = upgraded.report;
+    if (migrated.length > 0) {
+      void message.info(`${migrated.length} 个组件已升级到新版物料，可撤销`);
+    }
+    if (blocked.length > 0 || newer.length > 0) {
+      Modal.warning({
+        title: '部分组件的物料版本需要处理',
+        content: (
+          <ul style={{ paddingLeft: 18, margin: 0 }}>
+            {describeUpgrade({ ...upgraded.report, migrated: [] }).map((text, i) => (
+              <li key={i}>{text}</li>
+            ))}
+          </ul>
+        ),
+      });
+    }
   }, [draft, load]);
 
   const saveMutation = useMutation({

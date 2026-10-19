@@ -459,6 +459,7 @@ export function buildWorkflow(deps: WorkflowDeps) {
       const result = applyPatches(current, patches, {
         knownMaterials: deps.catalog.names,
         containerMaterials: deps.catalog.containers,
+        materialVersions: deps.catalog.versions,
       });
       const issues = [...rejected, ...result.issues.map((i) => i.message)];
       const preview = patches.map((p) => ({ op: p.op, text: describePatch(p) }));

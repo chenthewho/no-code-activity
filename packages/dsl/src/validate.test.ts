@@ -190,3 +190,19 @@ describe('compareVersion', () => {
     expect(compareVersion('1.0.0', '1.0.0')).toBe(0);
   });
 });
+
+describe('validateFinalDsl · 物料版本', () => {
+  it('节点版本高于注册表时发布拦截，低于或缺省时放行（交给渲染器迁移）', () => {
+    const dsl = baseDsl();
+    dsl.craftJson.btn_1!.type.version = '2.0.0';
+    const newer = validateFinalDsl(dsl, { materialVersions: { Button: '1.3.0' } });
+    expect(newer.success).toBe(false);
+    expect(newer.issues[0]).toMatchObject({ level: 'error', nodeId: 'btn_1' });
+    expect(newer.issues[0]!.message).toMatch(/高于物料注册表的 v1.3.0/);
+
+    dsl.craftJson.btn_1!.type.version = '1.0.0';
+    expect(validateFinalDsl(dsl, { materialVersions: { Button: '2.0.0' } }).success).toBe(true);
+    delete dsl.craftJson.btn_1!.type.version;
+    expect(validateFinalDsl(dsl, { materialVersions: { Button: '2.0.0' } }).success).toBe(true);
+  });
+});

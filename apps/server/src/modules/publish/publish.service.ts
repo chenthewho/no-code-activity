@@ -48,11 +48,16 @@ export class PublishService {
       const draft = await this.prisma.dslDraft.findUnique({ where: { activityId } });
       if (!draft) throw new BadRequestException('活动尚无内容，请先在设计器中编辑');
 
-      const knownMaterials = await this.loadEnabledMaterials();
+      const { names: knownMaterials, versions: materialVersions } = await this.loadEnabledMaterials();
       // 先迁移再校验：历史版本发布的 DSL 重新发布时，先沿迁移链推到当前协议
       const migrated = migrateDsl(draft.dsl);
-      // publish 模式：草稿期只提示的「还没填」在这里升级为错误，拦住不完整的配置
-      const result = validateFinalDsl(migrated.dsl, { knownMaterials, mode: 'publish' });
+      // publish 模式：草稿期只提示的「还没填」在这里升级为错误，拦住不完整的配置；
+      // 节点物料版本高于注册表（渲染器还没跟上）同样拦住
+      const result = validateFinalDsl(migrated.dsl, {
+        knownMaterials,
+        materialVersions,
+        mode: 'publish',
+      });
       if (!result.success) {
         throw new BadRequestException({ message: '发布校验失败', errors: result.issues });
       }
@@ -178,17 +183,20 @@ export class PublishService {
     });
   }
 
-  private async loadEnabledMaterials(): Promise<Set<string>> {
+  private async loadEnabledMaterials(): Promise<{ names?: Set<string>; versions?: Record<string, string> }> {
     const rows = await this.prisma.material.findMany({
       where: { enabled: true },
-      select: { name: true },
+      select: { name: true, version: true },
     });
     // 注册表为空说明没跑 seed，此时跳过物料校验而不是把所有发布都拦死
     if (rows.length === 0) {
       this.logger.warn('物料注册表为空，跳过物料名校验，请执行 pnpm --filter @nca/server seed');
-      return new Set();
+      return {};
     }
-    return new Set(rows.map((r) => r.name));
+    return {
+      names: new Set(rows.map((r) => r.name)),
+      versions: Object.fromEntries(rows.map((r) => [r.name, r.version])),
+    };
   }
 
   private stampMeta(

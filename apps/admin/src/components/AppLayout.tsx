@@ -6,6 +6,7 @@ import {
   ProjectOutlined,
   ThunderboltFilled,
   FileSearchOutlined,
+  BlockOutlined,
   SafetyOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -45,6 +46,11 @@ export function AppLayout() {
       key: '/system/roles',
       icon: <SafetyOutlined />,
       label: <Link to="/system/roles">角色权限</Link>,
+    },
+    can(PERMISSION.MATERIAL_MANAGE) && {
+      key: '/system/materials',
+      icon: <BlockOutlined />,
+      label: <Link to="/system/materials">物料管理</Link>,
     },
     can(PERMISSION.AUDIT_VIEW) && {
       key: '/audit',

@@ -8,6 +8,7 @@ import {
   type JsonValue,
   type NodeControl,
 } from '@nca/dsl';
+import { getMaterial } from '@nca/materials';
 import { createId, ROOT_NODE_ID } from '@nca/shared';
 import { create } from 'zustand';
 
@@ -128,6 +129,16 @@ interface DesignerState {
 
 const HISTORY_LIMIT = 50;
 
+/**
+ * 新节点记下物料版本。版本取自打进设计器的物料代码——画布渲染的正是这份代码，
+ * 节点的 props 也就是按这个版本的形状写的。不记的话，物料将来升大版本时
+ * 这个节点会被当成 1.0.0 再迁移一遍。
+ */
+function nodeType(materialName: string): CraftNode['type'] {
+  const version = getMaterial(materialName)?.meta.version;
+  return { resolvedName: materialName, ...(version ? { version } : {}) };
+}
+
 /** 每次结构性改动前压栈，保证撤销粒度是「一次操作」而不是「一次按键」 */
 function commit(state: DesignerState, next: FinalDsl): Partial<DesignerState> {
   return {
@@ -226,7 +237,7 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     const nodeId = createId(materialName.toLowerCase());
 
     const node: CraftNode = {
-      type: { resolvedName: materialName },
+      type: nodeType(materialName),
       isCanvas: false,
       props: { ...defaultProps },
       custom: {},
@@ -380,7 +391,7 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
       craftJson: {
         ...state.dsl.craftJson,
         [nodeId]: {
-          type: { resolvedName: materialName },
+          type: nodeType(materialName),
           isCanvas: false,
           props: { ...defaultProps },
           custom: {},
@@ -421,7 +432,7 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
 
     const nodeId = createId(materialName.toLowerCase());
     craftJson[nodeId] = {
-      type: { resolvedName: materialName },
+      type: nodeType(materialName),
       isCanvas: false,
       props: { ...defaultProps },
       custom: {},

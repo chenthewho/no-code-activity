@@ -158,8 +158,22 @@ export const roleApi = {
   remove: (id: string) => request<void>(`/roles/${id}`, { method: 'DELETE' }),
 };
 
+export interface MaterialRegistryItem {
+  name: string;
+  title: string;
+  version: string;
+  category: string;
+  enabled: boolean;
+  deprecated?: { reason?: string; replacedBy?: string };
+  updatedAt: string;
+  usage: { activities: number; nodes: number; outdated: number };
+}
+
 export const materialApi = {
   list: () => request<MaterialMeta[]>('/materials'),
+  registry: () => request<MaterialRegistryItem[]>('/materials/registry'),
+  toggle: (name: string, enabled: boolean) =>
+    request<void>(`/materials/${name}`, { method: 'PATCH', body: { enabled } }),
 };
 
 export interface AssetItem {

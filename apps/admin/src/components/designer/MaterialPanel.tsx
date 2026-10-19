@@ -58,7 +58,8 @@ export function MaterialPanel({ metas }: { metas: MaterialMeta[] }) {
 
   const grouped = useMemo(() => {
     // Page 是根容器，不该出现在工具箱里被再拖一个
-    let usable = metas.filter((m) => m.name !== 'Page');
+    // 废弃物料不再提供给新搭建，已在画布上的节点照常渲染、照常可编辑
+    let usable = metas.filter((m) => m.name !== 'Page' && !m.deprecated);
 
     const kw = keyword.trim().toLowerCase();
     if (kw) {

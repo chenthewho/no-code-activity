@@ -301,6 +301,7 @@ export class AiService {
         const result = applyPatches(current, patches, {
           knownMaterials: catalog.names,
           containerMaterials: catalog.containers,
+          materialVersions: catalog.versions,
         });
 
         queue.push({

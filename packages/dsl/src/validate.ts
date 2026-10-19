@@ -2,6 +2,7 @@ import { ROOT_NODE_ID } from '@nca/shared';
 import { finalDslSchema, type FinalDsl } from './schema/dsl';
 import type { CraftJson } from './schema/node';
 import { ACTION_FIELD_LABELS, REQUIRED_ACTION_FIELDS } from './schema/action';
+import { compareVersion } from './migrate';
 
 export interface DslIssue {
   level: 'error' | 'warning';
@@ -27,6 +28,11 @@ export interface ValidateOptions {
   /** 已注册物料名集合；传入则校验 resolvedName 能否解析 */
   knownMaterials?: ReadonlySet<string> | readonly string[];
   mode?: ValidateMode;
+  /**
+   * 物料名 → 当前注册版本。节点记录的版本高于它，说明 DSL 是用更新的物料搭的、
+   * 线上渲染器可能还不认识新 props——发布时必须拦住，而不是上线后才发现组件错乱。
+   */
+  materialVersions?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -53,6 +59,15 @@ function checkIntegrity(dsl: FinalDsl, options: ValidateOptions): DslIssue[] {
         level: 'error',
         path: `craftJson.${id}.type.resolvedName`,
         message: `未注册的物料「${node.type.resolvedName}」，渲染时无法解析`,
+      });
+    }
+    const registered = options.materialVersions?.[node.type.resolvedName];
+    if (registered && node.type.version && compareVersion(node.type.version, registered) > 0) {
+      issues.push({
+        level: 'error',
+        path: `craftJson.${id}.type.version`,
+        nodeId: id,
+        message: `组件「${node.displayName ?? node.type.resolvedName}」用的是 v${node.type.version}，高于物料注册表的 v${registered}，请先同步物料再发布`,
       });
     }
     for (const child of node.nodes) {

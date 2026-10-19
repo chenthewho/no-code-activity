@@ -21,6 +21,7 @@ const CATALOG: MaterialCatalog = {
   ] as unknown as MaterialCatalog['materials'],
   names: new Set(['Lottery', 'Login', 'Modal', 'Text']),
   containers: new Set(['Page', 'Modal']),
+  versions: { Lottery: '1.0.0', Login: '1.1.0', Modal: '1.0.0', Text: '1.0.0' },
   text: '（测试用物料清单）',
 };
 

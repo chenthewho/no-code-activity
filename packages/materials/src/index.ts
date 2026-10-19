@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import type { MaterialMeta } from '@nca/dsl';
 import type { MaterialDefinition } from './types';
+import type { MaterialVersionInfo } from './versioning';
 
 import { PageMaterial } from './components/Page';
 import { ContainerMaterial } from './components/Container';
@@ -23,6 +24,7 @@ import { FormMaterial } from './components/Form';
 import { AppointmentMaterial } from './components/Appointment';
 
 export * from './types';
+export * from './versioning';
 export * from './utils/style';
 export * from './utils/schema';
 
@@ -106,6 +108,11 @@ export const componentMap: Record<string, ComponentType<any>> = Object.fromEntri
 
 /** 设计器工具箱数据源 */
 export const materialMetas: MaterialMeta[] = materials.map((m) => m.meta);
+
+/** 物料名 → 当前版本与迁移链，upgradeMaterials 据此把旧节点升到当前形状 */
+export const materialVersions: Record<string, MaterialVersionInfo> = Object.fromEntries(
+  materials.map((m) => [m.meta.name, { version: m.meta.version, migrations: m.migrations ?? [] }]),
+);
 
 /** 传给 validateFinalDsl，拦截引用了未注册物料的 DSL */
 export const knownMaterialNames: ReadonlySet<string> = new Set(materials.map((m) => m.meta.name));

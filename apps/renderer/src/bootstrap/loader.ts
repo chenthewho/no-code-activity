@@ -1,5 +1,5 @@
 import { migrateDsl, validateFinalDsl, type FinalDsl } from '@nca/dsl';
-import { knownMaterialNames } from '@nca/materials';
+import { describeUpgrade, knownMaterialNames, materialVersions, upgradeMaterials } from '@nca/materials';
 
 export interface LoadResult {
   dsl: FinalDsl;
@@ -44,7 +44,10 @@ export function parseDsl(raw: unknown): LoadResult {
   if (migrated.applied.length > 0) {
     warnings.push(`已迁移 DSL 版本：${migrated.applied.join(' → ')}`);
   }
-  return { dsl: result.data, warnings };
+  // 物料层面的迁移：发布快照里的 props 按搭建当时的物料版本写，渲染前升到当前形状
+  const upgraded = upgradeMaterials(result.data, materialVersions);
+  warnings.push(...describeUpgrade(upgraded.report));
+  return { dsl: upgraded.dsl, warnings };
 }
 
 /**
