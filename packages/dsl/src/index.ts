@@ -10,3 +10,4 @@ export * from './validate';
 export * from './patch';
 export * from './migrate';
 export * from './factory';
+export * from './assets';

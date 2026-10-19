@@ -119,6 +119,10 @@ const envSchema = z.object({
   WECHAT_MP_APPID: z.string().optional(),
   WECHAT_MP_SECRET: z.string().optional(),
 
+  /** 告警评估周期（毫秒），0 关闭；监控事件保留天数 */
+  MONITOR_EVAL_INTERVAL_MS: z.coerce.number().int().min(0).default(60_000),
+  MONITOR_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+
   /**
    * AI 助手。key 一律 optional——没配 key 的本地环境要能照常起服务、跑测试，
    * 只是调 AI 接口时才报错。这里写成必填的话，所有不碰 AI 的人都会被卡在启动。

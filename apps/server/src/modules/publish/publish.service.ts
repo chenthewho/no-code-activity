@@ -4,6 +4,7 @@ import {
   DSL_SCHEMA_VERSION,
   migrateDsl,
   validateFinalDsl,
+  withCriticalAssets,
   type FinalDsl,
   type Manifest,
 } from '@nca/dsl';
@@ -11,6 +12,7 @@ import { ACTIVITY_STATUS, ACTIVITY_STATUS_TRANSITIONS, type ActivityStatus } fro
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
+import { MonitorService } from '../monitor/monitor.service';
 import { StorageService } from '../storage/storage.service';
 import { stampMetaFromActivity } from '../dsl/draft.service';
 import { buildActivityUrl } from './activity-url';
@@ -31,6 +33,7 @@ export class PublishService {
     private readonly storage: StorageService,
     private readonly redis: RedisService,
     private readonly config: ConfigService,
+    private readonly monitor: MonitorService,
   ) {}
 
   /**
@@ -64,11 +67,17 @@ export class PublishService {
         mode: 'publish',
       });
       if (!result.success) {
+        const errors = result.issues.filter((i) => i.level === 'error');
+        // 计入监控：「发布校验失败」频繁出现，往往是协议或物料升级出了问题，而不是运营手误
+        void this.monitor.record('publish_invalid', activityId, `${errors.length} 项校验错误`, {
+          issues: errors.slice(0, 5).map((i) => `${i.path}: ${i.message}`),
+        });
         throw new BadRequestException({ message: '发布校验失败', errors: result.issues });
       }
 
-      // 发布产物同样以基础信息为准，避免线上页读到过期的标题或活动时间
-      const dsl = this.stampMeta(result.data, activity);
+      // 发布产物同样以基础信息为准，避免线上页读到过期的标题或活动时间；
+      // 顺手标出首屏关键图片，渲染器启动时据此预加载
+      const dsl = withCriticalAssets(this.stampMeta(result.data, activity));
       if (Object.keys(dsl.craftJson).length <= 1 && dsl.craftJson.ROOT?.nodes.length === 0) {
         throw new BadRequestException('页面还是空的，至少放置一个组件再发布');
       }

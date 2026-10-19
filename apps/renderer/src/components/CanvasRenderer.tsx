@@ -6,6 +6,7 @@ import { evaluateBinding } from '../runtime/expression';
 import { resolveCondition, resolveProps } from '../runtime/props-parser';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import { EditableNode } from './EditableNode';
+import { NodeErrorBoundary } from './NodeErrorBoundary';
 
 /** 循环作用域。嵌套循环时内层继承外层，item/index 别名各自独立 */
 const ScopeContext = createContext<Record<string, unknown>>({});
@@ -128,8 +129,13 @@ function SingleNode({
     </Component>
   );
 
+  const guarded = (
+    <NodeErrorBoundary nodeId={nodeId} material={node.type.resolvedName} editing={editing}>
+      {rendered}
+    </NodeErrorBoundary>
+  );
   // 只有编辑态才套标记层，线上渲染保持零额外开销
-  return editing ? <EditableNode nodeId={nodeId}>{rendered}</EditableNode> : rendered;
+  return editing ? <EditableNode nodeId={nodeId}>{guarded}</EditableNode> : guarded;
 }
 
 /**

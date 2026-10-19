@@ -1,11 +1,41 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
 const pkg = (name: string) => fileURLToPath(new URL(`../../packages/${name}/src`, import.meta.url));
 
-export default defineConfig({
-  plugins: [react()],
+/**
+ * 首屏关键路径提速：DSL 不必等 JS 下载、解析、React 挂载完才开始拉。
+ * index.html 头部内联一小段脚本，页面一开始解析就发出 DSL 请求，与 JS 下载并行；
+ * loader 拿到同一个地址时直接复用这次请求（见 bootstrap/loader.ts 的 takePrefetch）。
+ * 顺带 preconnect API 域名，省掉一次 DNS + TLS。只作用于活动页 index.html。
+ */
+function dslPrefetch(apiBase: string): Plugin {
+  const script = `(function(){try{var q=new URLSearchParams(location.search);if(q.get('preview'))return;var id=q.get('id')||location.pathname.split('/act/')[1];var dsl=q.get('dsl');if(!id&&!dsl)return;var url=dsl||${JSON.stringify(apiBase)}+'/runtime/activities/'+id+'/dsl';var p=fetch(url).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()});p.catch(function(){});window.__NCA_DSL_PREFETCH__={url:url,promise:p}}catch(e){}})();`;
+  return {
+    name: 'nca-dsl-prefetch',
+    transformIndexHtml(_html, ctx) {
+      if (ctx.path !== '/index.html') return;
+      return [
+        {
+          tag: 'link',
+          attrs: { rel: 'preconnect', href: new URL(apiBase).origin, crossorigin: '' },
+          injectTo: 'head',
+        },
+        { tag: 'script', children: script, injectTo: 'head' },
+      ];
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
+  // 与 runtime/api-base.ts 同一个来源，内联脚本拼出的地址才和 loader 对得上
+  plugins: [
+    react(),
+    dslPrefetch(
+      loadEnv(mode, process.cwd(), 'VITE_').VITE_API_BASE ?? 'http://localhost:3100/api/v1',
+    ),
+  ],
   resolve: {
     /**
      * 工作区包直接指向 TS 源码，而不是各自的 dist。
@@ -37,4 +67,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

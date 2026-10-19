@@ -460,3 +460,71 @@ model AuditLog {
   @@index([createdAt])
   @@map("audit_log")
 }
+
+// ---------- 运行监控 ----------
+
+/**
+ * 渲染器健康上报：每次打开活动页，渲染器恰好上报一条「结局」——boot（渲染成功）/
+ * load_error（DSL 拉不下来）/ dsl_invalid（DSL 校验失败）/ stall（超时还没渲染出来），
+ * 外加 white_screen、js_error 等质量信号。服务端发布校验失败记为 publish_invalid。
+ */
+model MonitorEvent {
+  id         BigInt   @id @default(autoincrement())
+  activityId String?  @db.VarChar(64)
+  /// boot / load_error / dsl_invalid / stall / white_screen / js_error / host_mismatch / publish_invalid
+  type       String   @db.VarChar(32)
+  host       String?  @db.VarChar(32)
+  message    String?  @db.VarChar(500)
+  detail     Json?
+  /// boot 记首屏渲染完成耗时（距导航开始，毫秒）
+  durationMs Int?
+  ua         String?  @db.VarChar(255)
+  createdAt  DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@index([activityId, createdAt])
+  @@map("monitor_event")
+}
+
+/// 告警规则：在 windowMinutes 窗口内 metric 超过 threshold（且样本数够）即告警，冷却期内不重复
+model AlertRule {
+  id              String    @id @default(cuid())
+  name            String
+  /// dsl_invalid_rate / white_screen_rate / load_error_rate / js_error_count / publish_invalid_count
+  metric          String    @db.VarChar(32)
+  threshold       Float
+  windowMinutes   Int       @default(10)
+  /// 比率类指标的最少样本数：凌晨两次访问挂一次就报 50% 失败率毫无意义
+  minSamples      Int       @default(20)
+  cooldownMinutes Int       @default(30)
+  enabled         Boolean   @default(true)
+  /// wecom / feishu / dingtalk / generic / none
+  webhookType     String    @default("none") @db.VarChar(16)
+  webhookUrl      String?   @db.VarChar(1024)
+  lastTriggeredAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  records AlertRecord[]
+
+  @@map("alert_rule")
+}
+
+model AlertRecord {
+  id          String    @id @default(cuid())
+  ruleId      String
+  rule        AlertRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  metric      String    @db.VarChar(32)
+  value       Float
+  threshold   Float
+  samples     Int
+  /// 窗口内问题最集中的活动，便于直接定位
+  activityId  String?   @db.VarChar(64)
+  message     String    @db.Text
+  notified    Boolean   @default(false)
+  notifyError String?   @db.VarChar(500)
+  createdAt   DateTime  @default(now())
+
+  @@index([createdAt])
+  @@map("alert_record")
+}

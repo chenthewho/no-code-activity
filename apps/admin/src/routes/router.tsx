@@ -17,6 +17,7 @@ import { AuditLogPage } from './AuditLogPage';
 import { UserManagePage } from './UserManagePage';
 import { RoleManagePage } from './RoleManagePage';
 import { MaterialManagePage } from './MaterialManagePage';
+import { MonitorPage } from './MonitorPage';
 import { useAuthStore } from '../stores/auth';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -113,6 +114,16 @@ const userRoute = createRoute({
   beforeLoad: () => requireAuth([PERMISSION.USER_MANAGE]),
 });
 
+const monitorRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/monitor',
+  component: MonitorPage,
+  beforeLoad: () => requireAuth([PERMISSION.MONITOR_VIEW]),
+  validateSearch: (search: Record<string, unknown>) => ({
+    activityId: typeof search.activityId === 'string' ? search.activityId : undefined,
+  }),
+});
+
 const materialRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/system/materials',
@@ -148,6 +159,7 @@ const routeTree = rootRoute.addChildren([
     userRoute,
     roleRoute,
     materialRoute,
+    monitorRoute,
   ]),
 ]);
 

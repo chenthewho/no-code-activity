@@ -158,11 +158,32 @@ async function seedMaterials() {
   console.log(`✓ 物料注册表同步 ${materialMetas.length} 个`);
 }
 
+/**
+ * 默认告警规则，只在一条规则都没有时写入——之后的阈值以后台配置为准，重跑 seed 不覆盖。
+ * 通知地址默认不配（none），告警照样记录在后台，配上企业微信/飞书/钉钉机器人才会推送。
+ */
+async function seedAlertRules() {
+  if ((await prisma.alertRule.count()) > 0) {
+    console.log('✓ 告警规则已存在，跳过');
+    return;
+  }
+  await prisma.alertRule.createMany({
+    data: [
+      { name: 'DSL 校验失败率过高', metric: 'dsl_invalid_rate', threshold: 0.01, windowMinutes: 10, minSamples: 20 },
+      { name: '白屏率过高', metric: 'white_screen_rate', threshold: 0.05, windowMinutes: 10, minSamples: 20 },
+      { name: '活动页加载失败率过高', metric: 'load_error_rate', threshold: 0.05, windowMinutes: 10, minSamples: 20 },
+      { name: 'JS 错误激增', metric: 'js_error_count', threshold: 50, windowMinutes: 10, minSamples: 0 },
+    ],
+  });
+  console.log('✓ 默认告警规则 4 条');
+}
+
 async function main() {
   await seedPermissions();
   await seedRoles();
   await seedAdminUser();
   await seedMaterials();
+  await seedAlertRules();
 }
 
 main()

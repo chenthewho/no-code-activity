@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Button, Card, DatePicker, Form, Input, Popconfirm, Space, Table, Tag, message } from 'antd';
-import { EditOutlined, SaveOutlined } from '@ant-design/icons';
+import { DashboardOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
@@ -141,6 +141,14 @@ export function ActivityDetailPage() {
         title={activity?.title ?? '活动详情'}
         extra={
           <Space>
+            {can(PERMISSION.MONITOR_VIEW) && activity?.publishedVersion && (
+              <Button
+                icon={<DashboardOutlined />}
+                onClick={() => void navigate({ to: '/monitor', search: { activityId } })}
+              >
+                运行监控
+              </Button>
+            )}
             {editable && (
               <Button
                 icon={<EditOutlined />}

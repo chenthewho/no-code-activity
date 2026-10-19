@@ -28,6 +28,7 @@ import {
   restoreLogin,
 } from './auth';
 import { initAnalytics, trackAnalytics } from './analytics';
+import { reportMonitor } from './monitor';
 import { ROOT_NODE_ID } from '@nca/shared';
 import type { HostAdapter } from './host/types';
 
@@ -489,6 +490,7 @@ export function RuntimeProvider({
   useEffect(() => {
     if (editing || dsl.meta.hosts.includes(host.type)) return;
     console.warn(`[nca] 当前宿主 ${host.type} 不在该活动的投放宿主 ${dsl.meta.hosts.join(', ')} 中`);
+    reportMonitor('host_mismatch', { message: host.type, detail: { hosts: dsl.meta.hosts } });
   }, [dsl.meta.hosts, editing, host.type]);
 
   // 埋点初始化 + 页面曝光（PV）。只在真实浏览（非编辑预览）时记。

@@ -7,6 +7,7 @@ import {
   ThunderboltFilled,
   FileSearchOutlined,
   BlockOutlined,
+  DashboardOutlined,
   SafetyOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -74,6 +75,15 @@ export function AppLayout() {
       key: '/ai',
       icon: <RobotOutlined />,
       label: <Link to="/ai">AI 工作台</Link>,
+    },
+    can(PERMISSION.MONITOR_VIEW) && {
+      key: '/monitor',
+      icon: <DashboardOutlined />,
+      label: (
+        <Link to="/monitor" search={{ activityId: undefined }}>
+          运行监控
+        </Link>
+      ),
     },
     systemItems.length > 0 && {
       key: 'system',

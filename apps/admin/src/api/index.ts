@@ -394,3 +394,89 @@ export const auditApi = {
       query: query as Record<string, string>,
     }),
 };
+
+export type MonitorMetric =
+  | 'dsl_invalid_rate'
+  | 'white_screen_rate'
+  | 'load_error_rate'
+  | 'js_error_count'
+  | 'publish_invalid_count';
+
+export type WebhookType = 'none' | 'wecom' | 'feishu' | 'dingtalk' | 'generic';
+
+export interface MonitorOverview {
+  hours: number;
+  stats: {
+    attempts: number;
+    boots: number;
+    loadErrors: number;
+    dslInvalid: number;
+    stalls: number;
+    whiteScreens: number;
+    jsErrors: number;
+    publishInvalid: number;
+  };
+  rates: { dslInvalid: number; whiteScreen: number; loadError: number };
+  render: { p50: number | null; p90: number | null; samples: number };
+  trend: {
+    hour: string;
+    attempts: number;
+    whiteScreens: number;
+    dslInvalid: number;
+    loadErrors: number;
+    jsErrors: number;
+  }[];
+  topActivities: { activityId: string; title: string; problems: number }[];
+  recent: {
+    id: string;
+    type: string;
+    activityId: string | null;
+    host: string | null;
+    message: string | null;
+    detail: unknown;
+    createdAt: string;
+  }[];
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  metric: MonitorMetric;
+  threshold: number;
+  windowMinutes: number;
+  minSamples: number;
+  cooldownMinutes: number;
+  enabled: boolean;
+  webhookType: WebhookType;
+  webhookUrl: string | null;
+  lastTriggeredAt: string | null;
+}
+
+export type AlertRuleInput = Omit<AlertRule, 'id' | 'lastTriggeredAt' | 'webhookUrl'> & { webhookUrl?: string };
+
+export interface AlertRecord {
+  id: string;
+  ruleId: string;
+  rule: { name: string };
+  metric: MonitorMetric;
+  value: number;
+  threshold: number;
+  samples: number;
+  activityId: string | null;
+  message: string;
+  notified: boolean;
+  notifyError: string | null;
+  createdAt: string;
+}
+
+export const monitorApi = {
+  overview: (hours: number, activityId?: string) =>
+    request<MonitorOverview>('/monitor/overview', { query: { hours, activityId } }),
+  alerts: (page = 1) => request<{ rows: AlertRecord[]; total: number }>('/monitor/alerts', { query: { page } }),
+  rules: () => request<AlertRule[]>('/monitor/alert-rules'),
+  createRule: (body: AlertRuleInput) => request<AlertRule>('/monitor/alert-rules', { method: 'POST', body }),
+  updateRule: (id: string, body: Partial<AlertRuleInput>) =>
+    request<AlertRule>(`/monitor/alert-rules/${id}`, { method: 'PATCH', body }),
+  removeRule: (id: string) => request<void>(`/monitor/alert-rules/${id}`, { method: 'DELETE' }),
+  testRule: (id: string) => request<void>(`/monitor/alert-rules/${id}/test`, { method: 'POST' }),
+};
