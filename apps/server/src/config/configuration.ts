@@ -36,7 +36,19 @@ const envSchema = z.object({
   COS_REGION: z.string().optional(),
   COS_SECRET_ID: z.string().optional(),
   COS_SECRET_KEY: z.string().optional(),
-  CDN_BASE_URL: z.string().default('http://localhost:3100/static'),
+  /** 缺省从桶名后缀解析（name-1250000000） */
+  COS_APPID: z.string().optional(),
+  /** 覆盖桶的访问域名：全球加速、内网域名或兼容实现 */
+  COS_ENDPOINT: z.string().optional(),
+  /** STS 地址，VPC 内可改走 sts.internal.tencentcloudapi.com */
+  STS_ENDPOINT: z.string().optional(),
+  /** 浏览器直传的临时密钥有效期（秒），STS 允许 900 起 */
+  COS_UPLOAD_EXPIRES: z.coerce.number().int().min(900).max(7200).default(900),
+  /**
+   * 产物与素材的对外访问根。未配置时：本地模式指向 /static 静态托管，
+   * COS 模式指向桶域名——上线时应改成桶绑定的 CDN 域名。
+   */
+  CDN_BASE_URL: z.string().optional(),
   PUBLISH_LOCAL_DIR: z.string().default('./.publish'),
 
   /** Renderer 产物地址，写进 manifest.entry */

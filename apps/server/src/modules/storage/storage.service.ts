@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { CosService, IMMUTABLE_CACHE } from './cos.service';
 
 export interface PutResult {
   key: string;
@@ -12,9 +13,11 @@ export interface PutResult {
 /**
  * 对象存储抽象。
  *
- * 未配置 COS 时写本地目录并由 /static 静态托管，让本地能完整跑通
- * 「发布 → 拿到 URL → 打开活动页」这条链路，不必先备齐云资源。
- * 接入 COS 只需实现 putToCos，调用方无感。
+ * 配齐 COS 时写桶；否则写本地目录并由 /static 静态托管，让本地能完整跑通
+ * 「发布 → 拿到 URL → 打开活动页」这条链路，不必先备齐云资源。调用方无感。
+ *
+ * 不需要 CDN 刷新：所有 key 都带内容哈希与版本号，回滚只切数据库里的指针，
+ * CDN 上从来没有「同一个地址换了内容」的文件。
  */
 @Injectable()
 export class StorageService {
@@ -23,13 +26,33 @@ export class StorageService {
   private readonly cdnBase: string;
   private readonly cosEnabled: boolean;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly cos: CosService,
+  ) {
     this.localDir = resolve(this.config.get<string>('PUBLISH_LOCAL_DIR', './.publish'));
-    this.cdnBase = this.config.get<string>('CDN_BASE_URL', 'http://localhost:3100/static').replace(/\/$/, '');
-    this.cosEnabled = Boolean(this.config.get<string>('COS_BUCKET'));
+    this.cosEnabled = cos.enabled;
+    const configured = this.config.get<string>('CDN_BASE_URL');
+    this.cdnBase = (configured || (this.cosEnabled ? cos.endpoint : 'http://localhost:3100/static')).replace(
+      /\/$/,
+      '',
+    );
     if (!this.cosEnabled) {
+      if (this.config.get<string>('COS_BUCKET')) {
+        this.logger.warn('COS 配置不完整（需 COS_BUCKET / COS_REGION / COS_SECRET_ID / COS_SECRET_KEY），已回落本地存储');
+      }
       this.logger.warn(`未配置 COS，发布产物写入本地目录 ${this.localDir}`);
+    } else if (!configured) {
+      this.logger.warn(`未配置 CDN_BASE_URL，产物地址直接使用桶域名 ${this.cdnBase}，上线前请换成 CDN 域名`);
     }
+  }
+
+  get usingCos(): boolean {
+    return this.cosEnabled;
+  }
+
+  publicUrl(key: string): string {
+    return `${this.cdnBase}/${key}`;
   }
 
   get staticRoot(): string {
@@ -55,17 +78,12 @@ export class StorageService {
 
   async putBuffer(key: string, content: Buffer, contentType: string): Promise<PutResult> {
     if (this.cosEnabled) {
-      return this.putToCos(key, content, contentType);
+      await this.cos.putObject(key, content, contentType, IMMUTABLE_CACHE);
+      return { key, url: this.publicUrl(key) };
     }
     const filePath = join(this.localDir, key);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, content);
-    return { key, url: `${this.cdnBase}/${key}` };
-  }
-
-  private async putToCos(key: string, _content: Buffer, _contentType: string): Promise<PutResult> {
-    // TODO(M3): 接入 cos-nodejs-sdk-v5。资源上传届时改为前端凭 STS 临时密钥直传，
-    // 服务端只发签名与登记记录，避免大文件把带宽压在应用服务器上
-    throw new Error(`COS 上传尚未实现：${key}`);
+    return { key, url: this.publicUrl(key) };
   }
 }

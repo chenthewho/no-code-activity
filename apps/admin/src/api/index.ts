@@ -86,26 +86,83 @@ export interface AssetItem {
   createdAt: string;
 }
 
+type UploadTicket =
+  | { mode: 'reused'; id: string; url: string }
+  | { mode: 'proxy'; maxBytes: number }
+  | {
+      mode: 'cos';
+      uploadId: string;
+      url: string;
+      uploadUrl: string;
+      method: 'PUT';
+      headers: Record<string, string>;
+    };
+
+export interface UploadResult {
+  url: string;
+  reused: boolean;
+}
+
+/** 文件内容的 SHA-256，服务端据此去重并给对象命名 */
+async function sha256Hex(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** 服务端中转：走 FormData，不能用 request()——它固定发 JSON */
+async function proxyUpload(file: File, activityId?: string): Promise<UploadResult> {
+  const form = new FormData();
+  form.append('file', file);
+  if (activityId) form.append('activityId', activityId);
+
+  const token = localStorage.getItem('nca:token');
+  const base = import.meta.env.VITE_API_BASE ?? 'http://localhost:3100/api/v1';
+  const response = await fetch(`${base}/assets/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  const payload = (await response.json()) as { code: number; message: string; data: UploadResult };
+  if (!response.ok) throw new Error(payload.message ?? '上传失败');
+  return payload.data;
+}
+
 export const assetApi = {
   list: (query: { page?: number; pageSize?: number; type?: string } = {}) =>
     request<PageResult<AssetItem>>('/assets', { query: query as Record<string, string> }),
 
-  /** 走 FormData，不能用 request()——它固定发 JSON */
-  upload: async (file: File, activityId?: string): Promise<{ url: string; reused: boolean }> => {
-    const form = new FormData();
-    form.append('file', file);
-    if (activityId) form.append('activityId', activityId);
-
-    const token = localStorage.getItem('nca:token');
-    const base = import.meta.env.VITE_API_BASE ?? 'http://localhost:3100/api/v1';
-    const response = await fetch(`${base}/assets/upload`, {
+  /**
+   * 上传素材。先问服务端要凭证：同内容传过就直接复用；配了 COS 就用 STS 临时凭证
+   * 从浏览器直传到桶，文件不经过应用服务器；否则回落服务端中转。三条路返回同一形状。
+   */
+  upload: async (file: File, activityId?: string): Promise<UploadResult> => {
+    const ticket = await request<UploadTicket>('/assets/upload-ticket', {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
+      body: {
+        filename: file.name,
+        mimetype: file.type,
+        size: file.size,
+        sha256: await sha256Hex(file),
+        activityId,
+      },
     });
-    const payload = (await response.json()) as { code: number; message: string; data: { url: string; reused: boolean } };
-    if (!response.ok) throw new Error(payload.message ?? '上传失败');
-    return payload.data;
+
+    if (ticket.mode === 'reused') return { url: ticket.url, reused: true };
+    if (ticket.mode === 'proxy') return proxyUpload(file, activityId);
+
+    let put: Response;
+    try {
+      put = await fetch(ticket.uploadUrl, { method: ticket.method, headers: ticket.headers, body: file });
+    } catch {
+      // 桶没配跨域规则时浏览器直接掐掉请求，拿到的是网络错误而不是 4xx
+      throw new Error('直传被浏览器拦截，请检查存储桶的跨域（CORS）配置是否放行了后台域名');
+    }
+    if (!put.ok) throw new Error(`直传失败（HTTP ${put.status}）`);
+    const done = await request<{ url: string; reused: boolean }>('/assets/upload-complete', {
+      method: 'POST',
+      body: { uploadId: ticket.uploadId },
+    });
+    return { url: done.url, reused: done.reused };
   },
 };
 
