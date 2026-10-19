@@ -78,11 +78,16 @@ function setup(env: Record<string, unknown> = {}) {
 describe('RuntimeAuthService', () => {
   it('SSO 只允许跳回白名单源，防开放重定向', async () => {
     const { service } = setup();
-    await expect(service.beginSso('https://evil.example/act/1')).rejects.toBeInstanceOf(
+    const nonce = 'browser_nonce_0123456789';
+    await expect(service.beginSso('https://evil.example/act/1', nonce)).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    await expect(service.beginSso(undefined)).rejects.toBeInstanceOf(BadRequestException);
-    const url = new URL(await service.beginSso('http://localhost:5180/act/a1?ch=wx'));
+    await expect(service.beginSso(undefined, nonce)).rejects.toBeInstanceOf(BadRequestException);
+    // 不带浏览器 nonce 不让发起：否则攻击者能拿到一张不绑定任何浏览器的票据
+    await expect(service.beginSso('http://localhost:5180/act/a1', undefined)).rejects.toThrow(
+      /nonce/,
+    );
+    const url = new URL(await service.beginSso('http://localhost:5180/act/a1?ch=wx', nonce));
     expect(url.pathname).toBe('/api/v1/sso-mock/authorize');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
   });
@@ -91,12 +96,15 @@ describe('RuntimeAuthService', () => {
     const { service, sso, prisma } = setup();
     // 绕过真实 IdP：直接驱动注册进 SsoService 的回调处理器
     const completion = (
-      sso as unknown as { completions: Map<string, (p: unknown, r: string) => Promise<string>> }
+      sso as unknown as {
+        completions: Map<string, (p: unknown, r: string, n: string) => Promise<string>>;
+      }
     ).completions.get('runtime')!;
     const target = new URL(
       await completion(
         { id: 'alice', nickname: 'Alice' },
         'http://localhost:5180/act/a1?ch=wx#top',
+        'browser_nonce_0123456789',
       ),
     );
     expect(target.searchParams.get('ch')).toBe('wx');
@@ -109,9 +117,31 @@ describe('RuntimeAuthService', () => {
       nickname: 'Alice',
     });
 
-    const result = await service.exchange(ticket);
+    const result = await service.exchange(ticket, undefined, { nonce: 'browser_nonce_0123456789' });
     expect(result.user).toEqual({ id: 'ru_1', provider: 'sso', nickname: 'Alice' });
-    await expect(service.exchange(ticket)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.exchange(ticket, undefined, { nonce: 'browser_nonce_0123456789' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('票据只认发起登录的浏览器：拿到别人链接的浏览器没有那个 nonce，换不了', async () => {
+    const { service, sso } = setup();
+    const completion = (
+      sso as unknown as {
+        completions: Map<string, (p: unknown, r: string, n: string) => Promise<string>>;
+      }
+    ).completions.get('runtime')!;
+    const link = new URL(
+      await completion({ id: 'attacker' }, 'http://localhost:5180/act/a1', 'attacker_nonce_0123456'),
+    );
+    const ticket = link.searchParams.get('nca_ticket')!;
+    await expect(service.exchange(ticket, undefined, { nonce: 'victim_nonce_000000000' })).rejects.toThrow(
+      /不匹配/,
+    );
+    // 核对失败也作废，不给重试
+    await expect(
+      service.exchange(ticket, undefined, { nonce: 'attacker_nonce_0123456' }),
+    ).rejects.toThrow(/无效或已过期/);
   });
 
   it('C 端 token 能被自己验过，后台密钥签的 token 不行', async () => {
@@ -149,8 +179,16 @@ describe('RuntimeAuthService', () => {
     const { service } = setup();
     const { ticket, expiresIn } = await service.wechatMpTicket('mock:openid_1');
     expect(expiresIn).toBe(60);
-    const result = await service.exchange(ticket);
+    const result = await service.exchange(ticket, undefined, { host: 'wechat_mini_program' });
     expect(result.user.provider).toBe('wechat_mp');
+  });
+
+  it('小程序票据转发到普通浏览器里打开无效', async () => {
+    const { service } = setup();
+    const { ticket } = await service.wechatMpTicket('mock:openid_2');
+    await expect(service.exchange(ticket, undefined, { host: 'browser' })).rejects.toThrow(
+      /只能在小程序内使用/,
+    );
   });
 
   it('换票按 IP 限流', async () => {

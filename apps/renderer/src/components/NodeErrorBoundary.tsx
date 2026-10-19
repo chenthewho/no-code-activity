@@ -5,6 +5,8 @@ interface Props {
   nodeId: string;
   material: string;
   editing: boolean;
+  /** 节点数据变了就重试渲染：设计器里改对了属性，红框应当随之消失 */
+  resetKey: unknown;
   children: ReactNode;
 }
 
@@ -17,6 +19,10 @@ export class NodeErrorBoundary extends Component<Props, { error: Error | null }>
 
   static getDerivedStateFromError(error: Error) {
     return { error };
+  }
+
+  override componentDidUpdate(prev: Props): void {
+    if (this.state.error && prev.resetKey !== this.props.resetKey) this.setState({ error: null });
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {

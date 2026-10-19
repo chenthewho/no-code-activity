@@ -20,7 +20,13 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { RuntimeAuthService, type RuntimeTokenPayload } from './runtime-auth.service';
 import { RuntimeUser, RuntimeUserGuard } from './runtime-user.guard';
 
-const exchangeSchema = z.object({ ticket: z.string().min(1).max(128) });
+const exchangeSchema = z.object({
+  ticket: z.string().min(1).max(128),
+  /** 发起登录时存在 sessionStorage 里的 nonce */
+  nonce: z.string().max(128).optional(),
+  /** 当前宿主，小程序票据只认小程序宿主 */
+  host: z.string().max(32).optional(),
+});
 
 /** 浏览器宿主走 SSO 跳转，不经这里 */
 const hostLoginSchema = z.object({
@@ -58,9 +64,10 @@ export class RuntimeAuthController {
   @ApiOperation({ summary: '发起统一登录：302 到 IdP，登录后带 nca_ticket 跳回 redirect' })
   async authorize(
     @Query('redirect') redirect: string | undefined,
+    @Query('nonce') nonce: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
-    res.redirect(302, await this.auth.beginSso(redirect));
+    res.redirect(302, await this.auth.beginSso(redirect, nonce));
   }
 
   @Public()
@@ -68,10 +75,10 @@ export class RuntimeAuthController {
   @HttpCode(200)
   @ApiOperation({ summary: '一次性票据换 C 端 token' })
   async exchange(
-    @Body(new ZodValidationPipe(exchangeSchema)) dto: { ticket: string },
+    @Body(new ZodValidationPipe(exchangeSchema)) dto: z.infer<typeof exchangeSchema>,
     @Ip() ip?: string,
   ) {
-    return markRaw(await this.auth.exchange(dto.ticket, ip));
+    return markRaw(await this.auth.exchange(dto.ticket, ip, { nonce: dto.nonce, host: dto.host }));
   }
 
   @Public()

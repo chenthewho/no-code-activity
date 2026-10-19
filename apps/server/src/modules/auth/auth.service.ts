@@ -49,13 +49,22 @@ export class AuthService implements OnModuleInit {
     return payload;
   }
 
+  /**
+   * 用户角色里的全部权限码，不看账号是否启用、不走缓存。
+   * 给「能不能动这个人」的判断用：停用账号同样是高权限账号，跳过检查就成了提权口子。
+   */
+  async permissionsOf(userId: string): Promise<Permission[]> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: USER_WITH_PERMISSIONS });
+    return user ? this.buildPayload(user).permissions : [];
+  }
+
   /** 角色授权、用户角色、启停变化后调用：所有人的权限缓存立即作废 */
   async invalidatePermissions(): Promise<void> {
     await this.redis.incrWithExpire(PERMISSION_VERSION_KEY, 30 * 24 * 60 * 60 * 1000);
   }
 
   onModuleInit(): void {
-    this.sso.register('admin', (profile, redirect) => this.completeSso(profile, redirect));
+    this.sso.register('admin', (profile, redirect, nonce) => this.completeSso(profile, redirect, nonce));
   }
 
   get ssoEnabled(): boolean {
@@ -67,14 +76,14 @@ export class AuthService implements OnModuleInit {
   }
 
   /** 后台 SSO 只允许跳回站内路径：拼在 ADMIN_BASE_URL 后面，杜绝开放重定向 */
-  async beginSso(redirect: string | undefined): Promise<string> {
+  async beginSso(redirect: string | undefined, nonce: string | undefined): Promise<string> {
     if (!this.ssoEnabled) throw new BadRequestException('后台未开启统一登录');
     const path = redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/activities';
-    return this.sso.begin('admin', path);
+    return this.sso.begin('admin', path, nonce);
   }
 
-  async exchangeSsoTicket(ticket: string): Promise<{ token: string; user: CurrentUser }> {
-    const { userId } = await this.sso.consumeTicket<{ userId: string }>('admin', ticket);
+  async exchangeSsoTicket(ticket: string, nonce?: string): Promise<{ token: string; user: CurrentUser }> {
+    const { userId } = await this.sso.consumeTicket<{ userId: string; nonce?: string }>('admin', ticket, nonce);
     const user = await this.prisma.user.findUnique({ where: { id: userId }, include: USER_WITH_PERMISSIONS });
     if (!user?.enabled) throw new UnauthorizedException('账号不可用');
     const payload = this.buildPayload(user);
@@ -82,11 +91,10 @@ export class AuthService implements OnModuleInit {
   }
 
   /**
-   * IdP 认证通过后的后台建号。首次登录自动开户并授予默认角色（缺省只读），
-   * 真正的权限由管理员在「用户管理」里再分配——SSO 只证明「你是谁」，
-   * 不该顺带决定「你能干什么」。
+   * IdP 认证通过后的后台建号。首次登录自动开户，缺省不带任何权限，
+   * 由管理员在「用户管理」里分配——SSO 只证明「你是谁」，不该顺带决定「你能干什么」。
    */
-  private async completeSso(profile: OidcProfile, redirect: string): Promise<string> {
+  private async completeSso(profile: OidcProfile, redirect: string, nonce: string): Promise<string> {
     let user = await this.prisma.user.findUnique({ where: { ssoId: profile.id } });
     if (!user) {
       user = await this.prisma.user.create({
@@ -98,18 +106,18 @@ export class AuthService implements OnModuleInit {
           password: null,
         },
       });
-      const roleCode = this.config.get<string>('SSO_ADMIN_DEFAULT_ROLE') ?? 'viewer';
-      const role = await this.prisma.role.findUnique({ where: { code: roleCode } });
+      const roleCode = this.config.get<string>('SSO_ADMIN_DEFAULT_ROLE');
+      const role = roleCode ? await this.prisma.role.findUnique({ where: { code: roleCode } }) : null;
       if (role) {
         await this.prisma.userRole.create({ data: { userId: user.id, roleId: role.id } });
-      } else {
+      } else if (roleCode) {
         this.logger.warn(`SSO_ADMIN_DEFAULT_ROLE=${roleCode} 不存在，新用户 ${user.username} 没有任何角色`);
       }
-      this.logger.log(`SSO 首次登录，已开户 ${user.username}`);
+      this.logger.log(`SSO 首次登录，已开户 ${user.username}${role ? `（${role.code}）` : '（待授权）'}`);
     }
     if (!user.enabled) throw new ForbiddenException('账号已被停用，请联系管理员');
 
-    const ticket = await this.sso.issueTicket('admin', { userId: user.id });
+    const ticket = await this.sso.issueTicket('admin', { userId: user.id, nonce });
     const base = (this.config.get<string>('ADMIN_BASE_URL') ?? 'http://localhost:5173').replace(/\/$/, '');
     const target = new URL(`${base}/login`);
     target.searchParams.set('sso_ticket', ticket);

@@ -31,6 +31,13 @@ const envSchema = z.object({
 
   CORS_ORIGINS: z.string().default('*'),
 
+  /**
+   * 反向代理后面部署时必须配：否则所有请求的 IP 都是代理的，按 IP 的限流（登录换票、
+   * 埋点与健康上报）会让全体用户共用一个额度。取值同 Express 的 trust proxy：
+   * true / 代理层数（如 1）/ 逗号分隔的代理网段（如 loopback,10.0.0.0/8）。
+   */
+  TRUST_PROXY: z.string().optional(),
+
   // 对象存储：未配置时发布走本地目录，便于本地跑通全链路
   COS_BUCKET: z.string().optional(),
   COS_REGION: z.string().optional(),
@@ -91,9 +98,13 @@ const envSchema = z.object({
   SSO_CLAIM_USERNAME: z.string().default('preferred_username'),
   SSO_CLAIM_NICKNAME: z.string().default('name'),
   SSO_CLAIM_AVATAR: z.string().default('picture'),
-  /** 后台是否允许 SSO 登录；首次登录自动建号并授予这个角色 */
+  /**
+   * 后台是否允许 SSO 登录。首次登录自动开户，缺省**不授予任何角色**：C 端与后台往往共用
+   * 一个 IdP，任何活动参与者都能走到这一步——开户可以，权限必须由管理员手动授予。
+   * 只有确定 IdP 里全是内部员工时，才把 SSO_ADMIN_DEFAULT_ROLE 配成某个角色。
+   */
   SSO_ADMIN_ENABLED: envBool(true),
-  SSO_ADMIN_DEFAULT_ROLE: z.string().default('viewer'),
+  SSO_ADMIN_DEFAULT_ROLE: z.string().optional(),
 
   /**
    * C 端登录态。与后台 token 用不同的密钥签发——两种 token 互相拿不过去，
@@ -171,6 +182,15 @@ export function validateEnv(raw: Record<string, unknown>): AppConfig {
     throw new Error('HOST_AUTH_MODE=http 时必须配置 HOST_AUTH_VERIFY_URL');
   }
   return env;
+}
+
+/** TRUST_PROXY 的字符串转成 Express 认的形状 */
+export function parseTrustProxy(value: string): boolean | number | string {
+  const trimmed = value.trim();
+  if (trimmed === 'true') return true;
+  if (trimmed === 'false' || trimmed === '') return false;
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  return trimmed;
 }
 
 export function corsOrigins(value: string): string[] | true {

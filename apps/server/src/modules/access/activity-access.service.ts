@@ -87,11 +87,12 @@ export class ActivityAccessService {
       select: { activityId: true, role: true },
     });
     const roles = new Map(memberships.map((m) => [m.activityId, m.role as ActivityAccess]));
+    // 优先级与 resolve 一致：activity:all 压过一切，否则列表显示「只读」而详情页是「全部」
     const result: Record<string, ActivityAccess> = {};
     for (const row of rows) {
-      if (row.ownerId === user.sub) result[row.id] = 'owner';
+      if (seeAll) result[row.id] = 'all';
+      else if (row.ownerId === user.sub) result[row.id] = 'owner';
       else if (roles.has(row.id)) result[row.id] = roles.get(row.id)!;
-      else if (seeAll) result[row.id] = 'all';
     }
     return result;
   }

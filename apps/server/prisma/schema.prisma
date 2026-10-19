@@ -238,6 +238,8 @@ model Asset {
   type       String
   size       Int       @default(0)
   hash       String?
+  /// hash 是否由服务端算出。直传时 hash 是浏览器报的、服务端不复核，这类记录只给上传者本人复用
+  hashVerified Boolean @default(true)
   width      Int?
   height     Int?
   uploadedBy String?

@@ -17,17 +17,32 @@ export const authApi = {
     }),
   me: () => request<CurrentUser>('/auth/me'),
   ssoConfig: () => request<{ enabled: boolean; label: string }>('/auth/sso/config'),
-  ssoExchange: (ticket: string) =>
+  ssoExchange: (ticket: string, nonce?: string) =>
     request<{ token: string; user: CurrentUser }>('/auth/sso/exchange', {
       method: 'POST',
-      body: { ticket },
+      body: { ticket, nonce },
     }),
 };
 
-/** 后台 SSO 入口：整页跳到服务端，由它 302 去 IdP */
+const SSO_NONCE_KEY = 'nca:admin-sso-nonce';
+
+/**
+ * 后台 SSO 入口：整页跳到服务端，由它 302 去 IdP。nonce 留在本浏览器的 sessionStorage，
+ * 换票时带回——别人发来的 /login?sso_ticket=… 链接在这里换不了（防登录 CSRF）。
+ */
 export function adminSsoUrl(redirect: string): string {
   const base = import.meta.env.VITE_API_BASE ?? 'http://localhost:3100/api/v1';
-  return `${base}/auth/sso/authorize?redirect=${encodeURIComponent(redirect)}`;
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) =>
+    b.toString(16).padStart(2, '0'),
+  ).join('');
+  sessionStorage.setItem(SSO_NONCE_KEY, nonce);
+  return `${base}/auth/sso/authorize?redirect=${encodeURIComponent(redirect)}&nonce=${nonce}`;
+}
+
+export function takeAdminSsoNonce(): string | undefined {
+  const nonce = sessionStorage.getItem(SSO_NONCE_KEY) ?? undefined;
+  sessionStorage.removeItem(SSO_NONCE_KEY);
+  return nonce;
 }
 
 export interface ActivityListQuery {

@@ -133,6 +133,8 @@ Page({
 ```
 
 3. web-view 打开带 `nca_ticket` 的地址，渲染器启动时换成 token，并立刻从地址栏抹掉票据。
+   小程序换来的票据只能在小程序宿主里使用——转发到普通浏览器里打开无效。小程序页面接收 `src`
+   参数时请只接受自家活动域名，别让分享卡片能把任意地址（连同票据）塞进 web-view。
 
 服务端配 `WECHAT_MP_APPID` / `WECHAT_MP_SECRET` 后走 `code2Session`，有 `unionid` 优先用
 `unionid`。返回的是 60 秒有效的一次性票据而不是 token：票据进了 URL 也很快作废。

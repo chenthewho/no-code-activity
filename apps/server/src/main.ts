@@ -8,13 +8,17 @@ import { resolve } from 'node:path';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
-import { corsOrigins } from './config/configuration';
+import { corsOrigins, parseTrustProxy } from './config/configuration';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['log', 'warn', 'error'],
   });
   const config = app.get(ConfigService);
+
+  // 让 req.ip 取到真实客户端地址（X-Forwarded-For），按 IP 限流才按人生效
+  const trustProxy = config.get<string>('TRUST_PROXY');
+  if (trustProxy) app.set('trust proxy', parseTrustProxy(trustProxy));
 
   const prefix = config.get<string>('API_PREFIX', 'api/v1');
   app.setGlobalPrefix(prefix, {

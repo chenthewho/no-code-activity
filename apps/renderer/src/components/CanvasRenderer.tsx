@@ -130,7 +130,12 @@ function SingleNode({
   );
 
   const guarded = (
-    <NodeErrorBoundary nodeId={nodeId} material={node.type.resolvedName} editing={editing}>
+    <NodeErrorBoundary
+      nodeId={nodeId}
+      material={node.type.resolvedName}
+      editing={editing}
+      resetKey={node}
+    >
       {rendered}
     </NodeErrorBoundary>
   );

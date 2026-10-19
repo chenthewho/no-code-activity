@@ -9,93 +9,131 @@ interface AssetRow {
   id: string;
   url: string;
   hash: string | null;
+  hashVerified: boolean;
+  uploadedBy: string;
   size: number;
   type: string;
 }
 
+interface Where {
+  hash: string;
+  hashVerified?: boolean;
+  OR?: ({ hashVerified: boolean } | { uploadedBy: string })[];
+}
+
+/** 按 Prisma 的语义实现 findFirst 里用到的那几种条件 */
+function matches(row: AssetRow, where: Where): boolean {
+  if (row.hash !== where.hash) return false;
+  if (where.hashVerified !== undefined && row.hashVerified !== where.hashVerified) return false;
+  if (where.OR) {
+    return where.OR.some((c) =>
+      'hashVerified' in c ? row.hashVerified === c.hashVerified : row.uploadedBy === c.uploadedBy,
+    );
+  }
+  return true;
+}
+
 function setup(
-  options: { cosEnabled: boolean; headSize?: number; exists?: boolean } = { cosEnabled: true },
+  head: { exists?: boolean; size?: number; contentType?: string } = {},
+  cosEnabled = true,
 ) {
   const rows: AssetRow[] = [];
   const prisma = {
     asset: {
       findFirst: vi.fn(
-        async ({ where }: { where: { hash: string } }) =>
-          rows.find((r) => r.hash === where.hash) ?? null,
+        async ({ where }: { where: Where }) => rows.find((r) => matches(r, where)) ?? null,
       ),
       create: vi.fn(async ({ data }: { data: Omit<AssetRow, 'id'> }) => {
-        const row = { id: `as_${rows.length + 1}`, ...data };
+        const row = { id: `as_${rows.length + 1}`, hashVerified: true, ...data };
         rows.push(row);
         return row;
       }),
     },
   };
   const cos = {
-    enabled: options.cosEnabled,
+    enabled: cosEnabled,
     createDirectUpload: vi.fn(async (key: string, contentType: string) => ({
       uploadUrl: `https://bucket/${key}`,
       method: 'PUT' as const,
       headers: { Authorization: 'sig', 'x-cos-security-token': 't', 'Content-Type': contentType },
-      credentials: {
-        tmpSecretId: 'a',
-        tmpSecretKey: 'b',
-        sessionToken: 't',
-        startTime: 1,
-        expiredTime: 2,
-      },
-      bucket: 'bucket',
-      region: 'ap-guangzhou',
+      expiresAt: 2,
       key,
     })),
     headObject: vi.fn(async () => ({
-      exists: options.exists ?? true,
-      size: options.headSize ?? 2048,
+      exists: head.exists ?? true,
+      size: head.size ?? 2048,
+      contentType: head.contentType ?? 'image/png',
     })),
   };
-  const storage = { publicUrl: (key: string) => `https://cdn.test/${key}` };
+  const storage = {
+    publicUrl: (key: string) => `https://cdn.test/${key}`,
+    putBuffer: vi.fn(async (key: string) => ({ key, url: `https://cdn.test/${key}` })),
+  };
   const redis = new RedisService({ get: () => undefined } as never);
-  const config = { get: () => 900 };
-  const service = new AssetService(
-    prisma as never,
-    storage as never,
-    cos as never,
-    redis,
-    config as never,
-  );
-  return { service, rows, cos };
+  const service = new AssetService(prisma as never, storage as never, cos as never, redis, {
+    get: () => 900,
+  } as never);
+  return { service, rows, cos, storage };
 }
 
 const ticketDto = { filename: 'a.png', mimetype: 'image/png', size: 2048, sha256: HASH };
 
-describe('AssetService 直传', () => {
-  it('签发凭证 → 确认对象到位 → 登记素材，地址取 CDN 根', async () => {
-    const { service, rows, cos } = setup();
-    const ticket = await service.createUploadTicket(ticketDto, 'u1');
-    expect(ticket.mode).toBe('cos');
-    if (ticket.mode !== 'cos') return;
-    expect(cos.createDirectUpload).toHaveBeenCalledWith(`assets/aa/${HASH}.png`, 'image/png', 900);
-    expect(ticket.url).toBe(`https://cdn.test/assets/aa/${HASH}.png`);
+async function directUpload(service: AssetService, userId: string) {
+  const ticket = await service.createUploadTicket(ticketDto, userId);
+  if (ticket.mode !== 'cos') throw new Error(`expected cos ticket, got ${ticket.mode}`);
+  return { ticket, done: await service.completeUpload({ uploadId: ticket.uploadId }, userId) };
+}
 
-    const done = await service.completeUpload({ uploadId: ticket.uploadId }, 'u1');
-    expect(done).toEqual({ url: ticket.url, id: 'as_1', reused: false });
-    expect(rows[0]).toMatchObject({ hash: HASH, size: 2048, type: 'image' });
+describe('AssetService 直传', () => {
+  it('签发凭证 → 确认对象到位 → 登记素材；每次直传落在自己的对象上', async () => {
+    const { service, rows, cos } = setup();
+    const { ticket, done } = await directUpload(service, 'u1');
+    expect(ticket.key).toMatch(new RegExp(`^assets/direct/aa/${HASH}-[\\w-]+\\.png$`));
+    expect(cos.createDirectUpload).toHaveBeenCalledWith(ticket.key, 'image/png', 900);
+    expect(ticket).not.toHaveProperty('credentials');
+    expect(done).toEqual({ url: `https://cdn.test/${ticket.key}`, id: 'as_1', reused: false });
+    expect(rows[0]).toMatchObject({ hash: HASH, hashVerified: false, uploadedBy: 'u1' });
   });
 
-  it('同内容已存在时直接复用，不签发凭证', async () => {
-    const { service, cos } = setup();
-    const first = await service.createUploadTicket(ticketDto, 'u1');
-    if (first.mode === 'cos') await service.completeUpload({ uploadId: first.uploadId }, 'u1');
-    const second = await service.createUploadTicket(ticketDto, 'u2');
-    expect(second).toEqual({
+  it('自己直传过的可以复用；别人直传的不复用（哈希是浏览器报的，不可信）', async () => {
+    const { service } = setup();
+    await directUpload(service, 'u1');
+    expect((await service.createUploadTicket(ticketDto, 'u1')).mode).toBe('reused');
+    const other = await service.createUploadTicket(ticketDto, 'u2');
+    expect(other.mode).toBe('cos');
+  });
+
+  it('谎报哈希的直传毒害不了服务端中转：中转只复用服务端算过哈希的记录', async () => {
+    const { service, storage } = setup();
+    await directUpload(service, 'attacker');
+    const file = {
+      originalname: 'a.png',
+      mimetype: 'image/png',
+      size: 4,
+      buffer: Buffer.from('real'),
+    };
+    const result = await service.upload(file, 'victim');
+    expect(result.reused).toBe(false);
+    expect(storage.putBuffer).toHaveBeenCalled();
+  });
+
+  it('服务端中转登记的记录（哈希已核实）任何人都能复用', async () => {
+    const { service } = setup({}, false);
+    const buffer = Buffer.from('png-bytes');
+    const sha = (await import('node:crypto')).createHash('sha256').update(buffer).digest('hex');
+    await service.upload(
+      { originalname: 'a.png', mimetype: 'image/png', size: buffer.length, buffer },
+      'u1',
+    );
+    expect(
+      await service.createUploadTicket({ ...ticketDto, sha256: sha, size: buffer.length }, 'u2'),
+    ).toMatchObject({
       mode: 'reused',
-      id: 'as_1',
-      url: `https://cdn.test/assets/aa/${HASH}.png`,
     });
-    expect(cos.createDirectUpload).toHaveBeenCalledTimes(1);
   });
 
   it('未配 COS 时指示前端走中转', async () => {
-    const { service } = setup({ cosEnabled: false });
+    const { service } = setup({}, false);
     expect(await service.createUploadTicket(ticketDto, 'u1')).toEqual({
       mode: 'proxy',
       maxBytes: 10 * 1024 * 1024,
@@ -112,38 +150,27 @@ describe('AssetService 直传', () => {
     ).rejects.toThrow(/200MB/);
   });
 
-  it('对象没到桶里、大小对不上、换了个人确认，都不登记', async () => {
-    const missing = setup({ cosEnabled: true, exists: false });
-    const t1 = await missing.service.createUploadTicket(ticketDto, 'u1');
-    if (t1.mode === 'cos') {
-      await expect(missing.service.completeUpload({ uploadId: t1.uploadId }, 'u1')).rejects.toThrow(
-        /尚未上传/,
+  it('对象没到桶里、大小或类型对不上、换了个人确认，都不登记', async () => {
+    const cases = [
+      { head: { exists: false }, user: 'u1', error: /尚未上传/ },
+      { head: { size: 1 }, user: 'u1', error: /大小不一致/ },
+      { head: { contentType: 'text/html' }, user: 'u1', error: /类型不一致/ },
+      { head: {}, user: 'u2', error: /不属于/ },
+    ];
+    for (const c of cases) {
+      const { service, rows } = setup(c.head);
+      const ticket = await service.createUploadTicket(ticketDto, 'u1');
+      if (ticket.mode !== 'cos') throw new Error('expected cos');
+      await expect(service.completeUpload({ uploadId: ticket.uploadId }, c.user)).rejects.toThrow(
+        c.error,
       );
+      expect(rows).toHaveLength(0);
     }
-
-    const wrongSize = setup({ cosEnabled: true, headSize: 1 });
-    const t2 = await wrongSize.service.createUploadTicket(ticketDto, 'u1');
-    if (t2.mode === 'cos') {
-      await expect(
-        wrongSize.service.completeUpload({ uploadId: t2.uploadId }, 'u1'),
-      ).rejects.toThrow(/大小不一致/);
-    }
-
-    const other = setup();
-    const t3 = await other.service.createUploadTicket(ticketDto, 'u1');
-    if (t3.mode === 'cos') {
-      await expect(other.service.completeUpload({ uploadId: t3.uploadId }, 'u2')).rejects.toThrow(
-        /不属于/,
-      );
-    }
-    expect(missing.rows.length + wrongSize.rows.length + other.rows.length).toBe(0);
   });
 
   it('凭证只能确认一次', async () => {
     const { service } = setup();
-    const ticket = await service.createUploadTicket(ticketDto, 'u1');
-    if (ticket.mode !== 'cos') return;
-    await service.completeUpload({ uploadId: ticket.uploadId }, 'u1');
+    const { ticket } = await directUpload(service, 'u1');
     await expect(service.completeUpload({ uploadId: ticket.uploadId }, 'u1')).rejects.toThrow(
       /无效或已过期/,
     );

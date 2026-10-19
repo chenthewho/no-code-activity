@@ -14,7 +14,11 @@ const loginSchema = z.object({
 });
 type LoginDto = z.infer<typeof loginSchema>;
 
-const ssoExchangeSchema = z.object({ ticket: z.string().min(1).max(128) });
+const ssoExchangeSchema = z.object({
+  ticket: z.string().min(1).max(128),
+  /** 发起 SSO 时存在 sessionStorage 里的 nonce，票据只认发起它的浏览器 */
+  nonce: z.string().max(128).optional(),
+});
 
 @ApiTags('auth')
 @Controller('auth')
@@ -44,9 +48,10 @@ export class AuthController {
   @ApiOperation({ summary: '后台统一登录：302 到 IdP，回来后带 sso_ticket 到登录页' })
   async ssoAuthorize(
     @Query('redirect') redirect: string | undefined,
+    @Query('nonce') nonce: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
-    res.redirect(302, await this.auth.beginSso(redirect));
+    res.redirect(302, await this.auth.beginSso(redirect, nonce));
   }
 
   @Public()
@@ -54,8 +59,10 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({ summary: '用 SSO 一次性票据换后台 token' })
   @UsePipes(new ZodValidationPipe(ssoExchangeSchema))
-  ssoExchange(@Body() dto: { ticket: string }): Promise<{ token: string; user: CurrentUserType }> {
-    return this.auth.exchangeSsoTicket(dto.ticket);
+  ssoExchange(
+    @Body() dto: { ticket: string; nonce?: string },
+  ): Promise<{ token: string; user: CurrentUserType }> {
+    return this.auth.exchangeSsoTicket(dto.ticket, dto.nonce);
   }
 
   @Get('me')

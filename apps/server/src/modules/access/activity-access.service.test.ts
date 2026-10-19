@@ -86,7 +86,14 @@ describe('ActivityAccessService', () => {
       { id: 'a2', ownerId: 'ed' },
       { id: 'a3', ownerId: 'other' },
     ]);
-    expect(map).toEqual({ a1: 'editor', a2: 'owner', a3: 'all' });
+    // 与 resolve 同一优先级：有 activity:all 时一律是 all
+    expect(map).toEqual({ a1: 'all', a2: 'all', a3: 'all' });
+    const plain = await service.accessMap(as('ed'), [
+      { id: 'a1', ownerId: 'owner' },
+      { id: 'a2', ownerId: 'ed' },
+      { id: 'a3', ownerId: 'other' },
+    ]);
+    expect(plain).toEqual({ a1: 'editor', a2: 'owner' });
   });
 
   it('satisfies 规则表', () => {

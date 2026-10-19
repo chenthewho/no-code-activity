@@ -15,11 +15,15 @@ export class ActivityService {
   ) {}
 
   async list(query: ListActivityDto, user: JwtPayload): Promise<PageResult<ActivitySummary>> {
+    // 数据范围放进 AND 而不是展开合并：scope=mine 本身就是 { ownerId }，展开的话
+    // 后面的 ownerId 筛选会把它覆盖掉，传个别人的 ownerId 就能列出别人的全部活动
     const where: Prisma.ActivityWhereInput = {
       deletedAt: null,
-      ...this.access.scopeWhere(user, query.scope),
+      AND: [
+        this.access.scopeWhere(user, query.scope),
+        ...(query.ownerId ? [{ ownerId: query.ownerId }] : []),
+      ],
       ...(query.status ? { status: query.status } : {}),
-      ...(query.ownerId ? { ownerId: query.ownerId } : {}),
       ...(query.keyword ? { title: { contains: query.keyword } } : {}),
     };
 

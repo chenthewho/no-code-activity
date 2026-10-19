@@ -132,8 +132,10 @@ export class UserService {
       throw new BadRequestException('不能停用自己，也不能修改自己的角色');
     }
 
+    // 改别人的任何东西（启停、角色、资料）都要求他现有的权限你都有：
+    // 只校验改角色的话，停用管理员 → 重置密码 → 再启用，就能接管超级管理员
+    if (id !== actor.sub) await this.assertCanRevoke(id, actor);
     const roleIds = dto.roleCodes ? await this.grantableRoleIds(dto.roleCodes, actor) : null;
-    if (roleIds) await this.assertCanRevoke(id, actor);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
@@ -281,7 +283,6 @@ export class UserService {
 
   /** 动一个人的角色或密码，要求他现有的权限你都有——不能对比自己权限大的人下手 */
   private async assertCanRevoke(userId: string, actor: JwtPayload): Promise<void> {
-    const target = await this.auth.livePayload(userId).catch(() => null);
-    if (target) this.assertHolds(target.permissions, actor);
+    this.assertHolds(await this.auth.permissionsOf(userId), actor);
   }
 }

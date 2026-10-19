@@ -18,6 +18,7 @@ import { UserManagePage } from './UserManagePage';
 import { RoleManagePage } from './RoleManagePage';
 import { MaterialManagePage } from './MaterialManagePage';
 import { MonitorPage } from './MonitorPage';
+import { NoAccessPage } from './NoAccessPage';
 import { useAuthStore } from '../stores/auth';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -41,7 +42,8 @@ async function requireAuth(permissions: Permission[] = []) {
     });
   }
   if (permissions.length > 0 && !current.can(...permissions)) {
-    throw redirect({ to: '/activities' });
+    // 不能一律跳 /activities：没有 activity:view 的人（如刚 SSO 开户、尚未授权）会在这里无限重定向
+    throw redirect({ to: current.can(PERMISSION.ACTIVITY_VIEW) ? '/activities' : '/no-access' });
   }
 }
 
@@ -62,6 +64,12 @@ const authedRoute = createRoute({
   id: 'authed',
   component: AppLayout,
   beforeLoad: () => requireAuth(),
+});
+
+const noAccessRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/no-access',
+  component: NoAccessPage,
 });
 
 const indexRoute = createRoute({
@@ -151,6 +159,7 @@ const routeTree = rootRoute.addChildren([
   designerRoute,
   authedRoute.addChildren([
     indexRoute,
+    noAccessRoute,
     activityListRoute,
     activityDetailRoute,
     templateRoute,

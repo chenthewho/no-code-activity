@@ -11,13 +11,22 @@ export type SsoKind = 'runtime' | 'admin';
  * 由 AuthModule / RuntimeAuthModule 在启动时注册进来——SSO 模块因此不需要
  * 反过来依赖它们，也就没有循环引用。
  */
-export type SsoCompletion = (profile: OidcProfile, redirect: string) => Promise<string>;
+export type SsoCompletion = (profile: OidcProfile, redirect: string, nonce: string) => Promise<string>;
 
 interface PendingState {
   kind: SsoKind;
   redirect: string;
   verifier: string;
+  /** 发起登录的浏览器自己生成、存在 sessionStorage 里的随机串，换票时必须原样带回 */
+  nonce: string;
 }
+
+/**
+ * 登录要绑定到发起它的那个浏览器，否则就是登录 CSRF：攻击者用自己的账号走到回调，
+ * 把带票据（或带 code/state）的链接发给受害者，受害者打开即以攻击者身份登录，
+ * 之后抽中的奖、填的表都记在攻击者名下。发起时登记 nonce、换票时核对，链接就转不走了。
+ */
+export const NONCE_PATTERN = /^[\w-]{16,128}$/;
 
 /** 授权请求的有效期：用户在 IdP 登录页上磨蹭再久也够了 */
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -70,11 +79,12 @@ export class SsoService {
   }
 
   /** 生成授权地址：state 与 PKCE verifier 留在服务端，IdP 只看得到 challenge */
-  async begin(kind: SsoKind, redirect: string): Promise<string> {
+  async begin(kind: SsoKind, redirect: string, nonce: string | undefined): Promise<string> {
     if (!this.enabled) throw new NotFoundException('未开启统一登录');
+    if (!nonce || !NONCE_PATTERN.test(nonce)) throw new BadRequestException('缺少登录校验参数 nonce');
     const state = randomToken();
     const { verifier, challenge } = createPkcePair();
-    const pending: PendingState = { kind, redirect, verifier };
+    const pending: PendingState = { kind, redirect, verifier, nonce };
     await this.redis.set(stateKey(state), JSON.stringify(pending), STATE_TTL_MS);
     return this.client().authorizeUrl({
       state,
@@ -100,7 +110,7 @@ export class SsoService {
       codeVerifier: pending.verifier,
     });
     const profile = await client.userInfo(accessToken);
-    return completion(profile, pending.redirect);
+    return completion(profile, pending.redirect, pending.nonce);
   }
 
   /** 一次性票据：回跳 URL 里只带它，不带 token——URL 会进浏览历史和 Referer */
@@ -110,10 +120,18 @@ export class SsoService {
     return ticket;
   }
 
-  async consumeTicket<T>(kind: SsoKind, ticket: string): Promise<T> {
+  /**
+   * 取出票据。票据登记了 nonce 的（浏览器 SSO 发起的），换票方必须带回同一个 nonce——
+   * 拿到别人链接的浏览器没有这个值。票据先取后核：核对失败也作废，不给重试猜测的机会。
+   */
+  async consumeTicket<T extends { nonce?: string }>(kind: SsoKind, ticket: string, nonce?: string): Promise<T> {
     const raw = await this.redis.take(ticketKey(kind, ticket));
     if (!raw) throw new BadRequestException('登录票据无效或已过期');
-    return JSON.parse(raw) as T;
+    const payload = JSON.parse(raw) as T;
+    if (payload.nonce && payload.nonce !== nonce) {
+      throw new BadRequestException('登录票据与当前浏览器不匹配，请重新登录');
+    }
+    return payload;
   }
 
   private client(): OidcClient {

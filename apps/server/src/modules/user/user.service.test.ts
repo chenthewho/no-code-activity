@@ -72,7 +72,7 @@ function setup(targetPermissions: Permission[] = []) {
   };
   const auth = {
     invalidatePermissions: vi.fn(async () => undefined),
-    livePayload: vi.fn(async (id: string) => ({ sub: id, permissions: targetPermissions })),
+    permissionsOf: vi.fn(async () => targetPermissions),
   };
   return { service: new UserService(prisma as never, auth as never), prisma, auth, tx };
 }
@@ -135,6 +135,21 @@ describe('UserService 防提权', () => {
     await expect(service.resetPassword('boss', 'newpassword', manager)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
+  });
+
+  it('不能停用、启用比自己权限大的人——哪怕他已被停用，也不能重置他的密码', async () => {
+    const { service, auth } = setup([PERMISSION.SYSTEM_MANAGE]);
+    await expect(service.update('boss', { enabled: false }, manager)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(service.update('boss', { nickname: 'x' }, manager)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    // permissionsOf 不看 enabled：停用状态下照样认出他是超级管理员
+    await expect(service.resetPassword('boss', 'newpassword', manager)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(auth.permissionsOf).toHaveBeenCalledWith('boss');
   });
 
   it('不能停用自己或改自己的角色', async () => {

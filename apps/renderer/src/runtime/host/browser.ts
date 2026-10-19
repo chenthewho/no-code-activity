@@ -1,5 +1,5 @@
 import { HOST_TYPE, type HostType } from '@nca/shared';
-import { fetchAuthConfig, ssoLoginUrl } from '../auth';
+import { createLoginNonce, fetchAuthConfig, ssoLoginUrl } from '../auth';
 import type { HostAdapter } from './types';
 import { createBridgeHost } from './bridge';
 import { createWechatMiniProgramHost, isMiniProgramEnv } from './wechat-mp';
@@ -20,7 +20,7 @@ export const browserHost: HostAdapter = {
       console.warn('[nca] 获取登录配置失败', err);
       return null;
     }
-    window.location.assign(ssoLoginUrl(window.location.href));
+    window.location.assign(ssoLoginUrl(window.location.href, createLoginNonce()));
     return { redirecting: true };
   },
 

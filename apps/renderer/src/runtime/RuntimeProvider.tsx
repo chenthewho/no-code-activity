@@ -172,7 +172,7 @@ export function RuntimeProvider({
         }
         if (result.redirecting) return null;
         let profile: RuntimeUserProfile | null = null;
-        if (result.ticket) profile = await exchangeTicket(result.ticket);
+        if (result.ticket) profile = await exchangeTicket(result.ticket, host.type);
         else if (result.code) profile = await hostLogin(host.type, result.code);
         else if (result.userId) legacyIdRef.current = result.userId;
         if (profile) commitUser(profile);
@@ -477,14 +477,14 @@ export function RuntimeProvider({
   // 页面配置了「进页面即要求登录」时，恢复不出用户就立刻拉起登录。
   useEffect(() => {
     if (editing) return;
-    const ready = restoreLogin().then((profile) => {
+    const ready = restoreLogin(host.type).then((profile) => {
       if (profile) commitUser(profile);
     });
     authReadyRef.current = ready;
     void ready.then(() => {
       if (dsl.meta.auth.required && !userRef.current) void ensureLogin();
     });
-  }, [commitUser, dsl.meta.auth.required, editing, ensureLogin]);
+  }, [commitUser, dsl.meta.auth.required, editing, ensureLogin, host.type]);
 
   // 投放宿主里没有当前宿主：多半是链接被转发到了没测过的环境，照常渲染但留下线索
   useEffect(() => {
@@ -501,34 +501,60 @@ export function RuntimeProvider({
     trackAnalytics('expose', ROOT_NODE_ID);
   }, [dsl.meta.activityId, editing]);
 
-  // 自动加载数据源；轮询数据源按各自间隔独立计时
-  useEffect(() => {
-    const controller = new AbortController();
-    const timers: number[] = [];
+  /**
+   * 自动加载数据源；轮询数据源按各自间隔独立计时。
+   *
+   * 引用了 user 的数据源（如 `{{ user.id }}` 拼进接口参数）要等登录态恢复完再拉，
+   * 登录 / 退出后重拉一次；其余数据源不等，免得每个页面首屏都多等一次 /me。
+   */
+  const userId = user?.id ?? '';
+  const dependsOnUser = useCallback((ds: FinalDsl['dataSources'][number]) => JSON.stringify(ds).includes('user.'), []);
 
-    for (const ds of dsl.dataSources) {
-      // 静态数据源在 initDataSourceState 里已就位，再跑一遍只会多一次无谓重渲染
-      if (ds.type === 'static') continue;
-      if (ds.type === 'http' && !ds.autoLoad) continue;
+  const startDataSources = useCallback(
+    (sources: FinalDsl['dataSources'], forUser?: string) => {
+      const controller = new AbortController();
+      const timers: number[] = [];
+      for (const ds of sources) {
+        // 静态数据源在 initDataSourceState 里已就位，再跑一遍只会多一次无谓重渲染
+        if (ds.type === 'static') continue;
+        if (ds.type === 'http' && !ds.autoLoad) continue;
 
-      const load = async () => {
-        const next = await fetchDataSource(ds, buildContext(), controller.signal);
-        if (!controller.signal.aborted) {
-          setDataSources((prev) => ({ ...prev, [ds.id]: next }));
+        const load = async () => {
+          if (forUser !== undefined) {
+            await authReadyRef.current;
+            // 等待期间身份变了（启动时恢复出了登录用户）：这一轮作废，按新身份重跑的那轮会拉
+            if ((userRef.current?.id ?? '') !== forUser) return;
+          }
+          if (controller.signal.aborted) return;
+          const next = await fetchDataSource(ds, buildContext(), controller.signal);
+          if (!controller.signal.aborted) {
+            setDataSources((prev) => ({ ...prev, [ds.id]: next }));
+          }
+        };
+        void load();
+
+        if (ds.type === 'http' && ds.pollInterval > 0) {
+          timers.push(window.setInterval(load, ds.pollInterval));
         }
-      };
-      void load();
-
-      if (ds.type === 'http' && ds.pollInterval > 0) {
-        timers.push(window.setInterval(load, ds.pollInterval));
       }
-    }
+      return () => {
+        controller.abort();
+        timers.forEach((t) => window.clearInterval(t));
+      };
+    },
+    [buildContext],
+  );
 
-    return () => {
-      controller.abort();
-      timers.forEach((t) => window.clearInterval(t));
-    };
-  }, [dsl.dataSources, buildContext]);
+  useEffect(
+    () => startDataSources(dsl.dataSources.filter((ds) => !dependsOnUser(ds))),
+    [dsl.dataSources, dependsOnUser, startDataSources],
+  );
+
+  useEffect(
+    () => startDataSources(dsl.dataSources.filter(dependsOnUser), userId),
+    // userId 变了（登录、退出）就按新身份重拉
+    [dsl.dataSources, dependsOnUser, startDataSources, userId],
+  );
 
   // 编辑态由设计器说了算，运行时才用动作攒出来的那份
   const visibleModals = useMemo(

@@ -11,19 +11,23 @@ export interface TempCredentials {
   expiredTime: number;
 }
 
-/** 浏览器直传需要的一切：地址、方法、要带的头，以及给 SDK 分片上传用的临时密钥 */
+/**
+ * 浏览器直传需要的一切：地址、方法、要带的头。只给一个预签好的请求，不给临时密钥本身——
+ * 拿到密钥就能在有效期内自己签任意多次请求，预签请求则只够把这一个文件传上去。
+ */
 export interface DirectUpload {
   uploadUrl: string;
   method: 'PUT';
   headers: Record<string, string>;
-  credentials: TempCredentials;
-  bucket: string;
-  region: string;
+  /** 预签名到期时间（秒级时间戳） */
+  expiresAt: number;
   key: string;
 }
 
 /** 签名有效期留一点余量给时钟偏差，与官方 SDK 的做法一致 */
 const CLOCK_SKEW_S = 60;
+/** 直传预签名的有效期：够传完一个大文件，又不至于长时间留着一个能覆盖对象的请求 */
+const DIRECT_SIGN_TTL_S = 600;
 
 /** 素材与产物都按内容寻址：同一个 key 的内容永不改变，CDN 与浏览器可以永久缓存 */
 export const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
@@ -103,8 +107,8 @@ export class CosService {
     }
   }
 
-  /** 查对象是否存在及大小——直传完成后服务端据此确认文件真的到了 */
-  async headObject(key: string): Promise<{ exists: boolean; size: number }> {
+  /** 查对象是否存在、大小与类型——直传完成后服务端据此确认文件真的到了、没被换成别的类型 */
+  async headObject(key: string): Promise<{ exists: boolean; size: number; contentType?: string }> {
     const url = this.objectUrl(key);
     const response = await fetch(url, {
       method: 'HEAD',
@@ -114,13 +118,16 @@ export class CosService {
     if (response.status === 404) return { exists: false, size: 0 };
     if (!response.ok)
       throw new BadGatewayException(`COS 查询对象失败 ${key}：HTTP ${response.status}`);
-    return { exists: true, size: Number(response.headers.get('content-length') ?? 0) };
+    return {
+      exists: true,
+      size: Number(response.headers.get('content-length') ?? 0),
+      contentType: response.headers.get('content-type') ?? undefined,
+    };
   }
 
   /**
    * 浏览器直传：换一份只允许 PutObject 这一个 key 的临时密钥，并用它预先算好签名。
-   * 前端直接照着 headers 发 PUT 即可，不必引入 COS SDK；要分片上传大文件时，
-   * credentials 也一并给了。
+   * 前端直接照着 headers 发 PUT 即可，不必引入 COS SDK。
    */
   async createDirectUpload(
     key: string,
@@ -136,7 +143,7 @@ export class CosService {
       pathname: `/${key}`,
       headers: { host: new URL(uploadUrl).host },
       startTime: credentials.startTime,
-      expireTime: credentials.expiredTime,
+      expireTime: Math.min(credentials.expiredTime, Math.floor(Date.now() / 1000) + DIRECT_SIGN_TTL_S),
     });
     return {
       uploadUrl,
@@ -148,9 +155,7 @@ export class CosService {
         // COS 把 PUT 时的 Cache-Control 存成对象元数据，回源时原样返回
         'Cache-Control': IMMUTABLE_CACHE,
       },
-      credentials,
-      bucket: this.bucket,
-      region: this.region,
+      expiresAt: Math.min(credentials.expiredTime, Math.floor(Date.now() / 1000) + DIRECT_SIGN_TTL_S),
       key,
     };
   }

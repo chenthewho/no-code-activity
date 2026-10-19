@@ -74,7 +74,9 @@ describe('CosService', () => {
     // 前端拿到的签名出自临时密钥，永久密钥不出服务端
     expect(upload.headers.Authorization).toContain('q-ak=AKIDtmp');
     expect(upload.headers.Authorization).not.toContain('AKIDpermanent');
-    expect(upload.credentials.expiredTime).toBe(1900000000);
+    // 只给预签好的请求，不给临时密钥；预签名有效期收短到 10 分钟以内
+    expect(upload).not.toHaveProperty('credentials');
+    expect(upload.expiresAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 600);
   });
 
   it('STS 报错时把错误码带出来', async () => {
@@ -98,12 +100,19 @@ describe('CosService', () => {
         .fn()
         .mockResolvedValueOnce(new Response(null, { status: 404 }))
         .mockResolvedValueOnce(
-          new Response(null, { status: 200, headers: { 'Content-Length': '1234' } }),
+          new Response(null, {
+            status: 200,
+            headers: { 'Content-Length': '1234', 'Content-Type': 'image/png' },
+          }),
         ),
     );
     const cos = service();
     expect(await cos.headObject('assets/a.png')).toEqual({ exists: false, size: 0 });
-    expect(await cos.headObject('assets/a.png')).toEqual({ exists: true, size: 1234 });
+    expect(await cos.headObject('assets/a.png')).toEqual({
+      exists: true,
+      size: 1234,
+      contentType: 'image/png',
+    });
   });
 
   it('服务端上传带 Cache-Control，失败时报出 COS 的错误码', async () => {

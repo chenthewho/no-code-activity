@@ -111,8 +111,10 @@ export class AssetService {
   /**
    * 直传第一步：校验类型与大小、按内容哈希去重，然后签发只能写这一个对象的凭证。
    *
-   * 哈希由前端计算、服务端不复核（复核就得把文件下载一遍，直传的意义就没了）。
-   * 它只用来去重与命名；后台用户都是受信运营，这一点和中转上传的威胁模型一致。
+   * 哈希由前端计算、服务端不复核（复核就得把文件下载一遍，直传的意义就没了），所以：
+   * - 复用只认服务端算过哈希的素材，或本人之前直传的——报一个别人图片的哈希，
+   *   骗不到别人的地址，也没法让别人之后上传同一张图时拿到自己传的内容；
+   * - 直传对象的 key 带上本次 uploadId，各传各的，谁都覆盖不了别人的对象。
    */
   async createUploadTicket(dto: UploadTicketDto, userId: string): Promise<UploadTicket> {
     const ext = this.assertAcceptable(
@@ -121,15 +123,17 @@ export class AssetService {
       this.cos.enabled ? MAX_DIRECT_BYTES : MAX_PROXY_BYTES,
     );
 
-    const existing = await this.prisma.asset.findFirst({ where: { hash: dto.sha256 } });
+    const existing = await this.prisma.asset.findFirst({
+      where: { hash: dto.sha256, OR: [{ hashVerified: true }, { uploadedBy: userId }] },
+    });
     if (existing) return { mode: 'reused', id: existing.id, url: existing.url };
 
     if (!this.cos.enabled) return { mode: 'proxy', maxBytes: MAX_PROXY_BYTES };
 
-    const key = assetKey(dto.sha256, ext);
+    const uploadId = randomToken(18);
+    const key = directAssetKey(dto.sha256, uploadId, ext);
     const expires = this.config.get<number>('COS_UPLOAD_EXPIRES') ?? 900;
     const direct = await this.cos.createDirectUpload(key, dto.mimetype, expires);
-    const uploadId = randomToken(18);
     const pending: PendingUpload = {
       key,
       url: this.storage.publicUrl(key),
@@ -158,10 +162,10 @@ export class AssetService {
     if (head.size !== pending.size) {
       throw new BadRequestException(`文件大小不一致（声明 ${pending.size}，实际 ${head.size}）`);
     }
-
-    // 两个人同时传同一张图：后确认的那个复用先登记的记录，不产生重复素材
-    const existing = await this.prisma.asset.findFirst({ where: { hash: pending.hash } });
-    if (existing) return { url: existing.url, id: existing.id, reused: true };
+    // 类型以签发时校验过的为准：传上去的若被换成 text/html，CDN 上就多了一个能执行脚本的页面
+    if (head.contentType && head.contentType.split(';')[0]!.trim() !== pending.mimetype) {
+      throw new BadRequestException(`文件类型不一致（声明 ${pending.mimetype}，实际 ${head.contentType}）`);
+    }
 
     const asset = await this.prisma.asset.create({
       data: {
@@ -169,6 +173,7 @@ export class AssetService {
         type: assetType(pending.mimetype),
         size: pending.size,
         hash: pending.hash,
+        hashVerified: false,
         activityId: pending.activityId,
         uploadedBy: userId,
       },
@@ -186,7 +191,8 @@ export class AssetService {
 
     // 内容寻址：同一张图重复上传不会产生副本，也天然可长缓存
     const hash = createHash('sha256').update(file.buffer).digest('hex');
-    const existing = await this.prisma.asset.findFirst({ where: { hash } });
+    // 服务端自己算的哈希：只复用同样经过服务端核实的记录
+    const existing = await this.prisma.asset.findFirst({ where: { hash, hashVerified: true } });
     if (existing) {
       return { url: existing.url, id: existing.id, reused: true };
     }
@@ -232,6 +238,11 @@ export class AssetService {
 
 export function assetKey(hash: string, ext: string): string {
   return `assets/${hash.slice(0, 2)}/${hash}${ext}`;
+}
+
+/** 直传对象的 key：哈希是浏览器报的，带上 uploadId 让每次直传落在自己的对象上 */
+export function directAssetKey(hash: string, uploadId: string, ext: string): string {
+  return `assets/direct/${hash.slice(0, 2)}/${hash}-${uploadId}${ext}`;
 }
 
 function assetType(mimetype: string): string {

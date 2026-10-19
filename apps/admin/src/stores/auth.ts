@@ -1,7 +1,7 @@
 import type { CurrentUser, Permission } from '@nca/shared';
 import { PERMISSION } from '@nca/shared';
 import { create } from 'zustand';
-import { authApi } from '../api';
+import { authApi, takeAdminSsoNonce } from '../api';
 import { clearToken, getToken, setToken } from '../api/client';
 
 interface AuthState {
@@ -27,7 +27,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   async loginWithSsoTicket(ticket) {
-    const { token, user } = await authApi.ssoExchange(ticket);
+    const { token, user } = await authApi.ssoExchange(ticket, takeAdminSsoNonce());
     setToken(token);
     set({ user, initializing: false });
   },

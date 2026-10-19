@@ -13,7 +13,7 @@ async function loadSurface() {
   return (await import('../components/RendererSurface')).RendererSurface;
 }
 
-function makeDsl(events: unknown[] = []): FinalDsl {
+function makeDsl(events: unknown[] = [], dataSources: unknown[] = []): FinalDsl {
   return finalDslSchema.parse({
     schemaVersion: '1.1.0',
     meta: { activityId: 'act_auth', title: '登录测试', auth: { loginMode: 'sso' } },
@@ -26,6 +26,7 @@ function makeDsl(events: unknown[] = []): FinalDsl {
       btn: { type: { resolvedName: 'Button' }, props: { text: '操作' } },
     },
     events,
+    dataSources,
   });
 }
 
@@ -35,6 +36,7 @@ function jsonResponse(status: number, body: unknown) {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   window.history.replaceState(null, '', '/');
 });
 
@@ -47,6 +49,8 @@ afterEach(() => {
 describe('C 端登录', () => {
   it('SSO 回跳的票据换成 token，地址栏随即抹掉票据，user 命名空间可用', async () => {
     window.history.replaceState(null, '', '/?id=act_auth&nca_ticket=t_1');
+    // 发起 SSO 时由本浏览器存下的 nonce，换票时必须带回
+    sessionStorage.setItem('nca:sso-nonce', 'n_from_this_browser');
     const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url.endsWith('/runtime/auth/exchange')) {
         return jsonResponse(200, {
@@ -65,7 +69,13 @@ describe('C 端登录', () => {
     expect(window.location.search).toBe('?id=act_auth');
     expect(localStorage.getItem('nca:rt-token')).toBe('rt_token');
     const exchangeCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/exchange'));
-    expect(JSON.parse(String((exchangeCall?.[1] as RequestInit).body))).toEqual({ ticket: 't_1' });
+    expect(JSON.parse(String((exchangeCall?.[1] as RequestInit).body))).toEqual({
+      ticket: 't_1',
+      nonce: 'n_from_this_browser',
+      host: 'browser',
+    });
+    // nonce 一次性：换过就清掉
+    expect(sessionStorage.getItem('nca:sso-nonce')).toBeNull();
   });
 
   it('服务端要求登录时拉起宿主登录，用 code 换 token 后带着 token 重试', async () => {
@@ -183,5 +193,69 @@ describe('C 端登录', () => {
 
     expect(screen.getByText('未登录')).toBeInTheDocument();
     expect(localStorage.getItem('nca:rt-token')).toBeNull();
+  });
+
+  it('引用 user 的自动加载数据源等登录态恢复后再拉，用的是登录后的身份', async () => {
+    window.history.replaceState(null, '', '/?id=act_auth&nca_ticket=t_2');
+    const urls: string[] = [];
+    let finishExchange: () => void = () => {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        if (String(url).endsWith('/runtime/auth/exchange')) {
+          // 换票先挂着，看清楚谁在等它、谁不等
+          await new Promise<void>((resolve) => (finishExchange = resolve));
+          return jsonResponse(200, { token: 'tk', user: { id: 'u42', provider: 'sso', nickname: 'N' } });
+        }
+        return jsonResponse(200, { ok: true });
+      }),
+    );
+
+    const RendererSurface = await loadSurface();
+    render(
+      <RendererSurface
+        dsl={makeDsl(
+          [],
+          [
+            { id: 'ds_me', name: '我的', type: 'http', url: '/api/profile', params: { uid: '{{ user.id }}' }, autoLoad: true },
+            { id: 'ds_pub', name: '公共', type: 'http', url: '/api/public', autoLoad: true },
+          ],
+        )}
+      />,
+    );
+    await act(async () => {});
+
+    // 换票还没回来：公共数据源已经发出，依赖 user 的还在等
+    expect(urls.some((u) => u.includes('/api/public'))).toBe(true);
+    expect(urls.some((u) => u.includes('/api/profile'))).toBe(false);
+
+    await act(async () => finishExchange());
+    await waitFor(() => expect(urls.some((u) => u.includes('/api/profile'))).toBe(true));
+    const profile = urls.filter((u) => u.includes('/api/profile'));
+    expect(profile).toHaveLength(1);
+    expect(profile[0]).toContain('uid=u42');
+  });
+
+  it('别人转发来的带票据链接换不了票时，保持本机原有登录态，不会被切成别人', async () => {
+    localStorage.setItem('nca:rt-token', 'my_token');
+    window.history.replaceState(null, '', '/?id=act_auth&nca_ticket=attacker_ticket');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (String(url).endsWith('/runtime/auth/exchange')) {
+          return jsonResponse(400, { message: '登录票据与当前浏览器不匹配，请重新登录' });
+        }
+        if (String(url).endsWith('/runtime/auth/me')) {
+          return jsonResponse(200, { id: 'me', provider: 'sso', nickname: '我自己' });
+        }
+        return jsonResponse(200, {});
+      }),
+    );
+    const RendererSurface = await loadSurface();
+    render(<RendererSurface dsl={makeDsl()} />);
+    expect(await screen.findByText('你好 我自己')).toBeInTheDocument();
+    expect(localStorage.getItem('nca:rt-token')).toBe('my_token');
+    expect(window.location.search).toBe('?id=act_auth');
   });
 });

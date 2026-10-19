@@ -66,9 +66,45 @@ export function takeTicketFromUrl(): string | null {
   return ticket;
 }
 
+const NONCE_KEY = 'nca:sso-nonce';
+
+/**
+ * 发起 SSO 前生成一个只存在本浏览器里的随机串，服务端把它记在登录请求上，
+ * 换票时必须原样带回——别人转发来的带票据链接，在这个浏览器里换不了（防登录 CSRF）。
+ * sessionStorage 跨整页跳转保留、不跨标签页；隐私模式写不进去时退到 localStorage。
+ */
+export function createLoginNonce(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  const nonce = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  for (const storage of [() => window.sessionStorage, () => window.localStorage]) {
+    try {
+      storage().setItem(NONCE_KEY, nonce);
+      return nonce;
+    } catch {
+      // 换下一个
+    }
+  }
+  return nonce;
+}
+
+function takeLoginNonce(): string | undefined {
+  for (const storage of [() => window.sessionStorage, () => window.localStorage]) {
+    try {
+      const value = storage().getItem(NONCE_KEY);
+      if (value) {
+        storage().removeItem(NONCE_KEY);
+        return value;
+      }
+    } catch {
+      // 换下一个
+    }
+  }
+  return undefined;
+}
+
 /** 发起统一登录的地址：服务端 302 到 IdP，登录完再带票据跳回当前页 */
-export function ssoLoginUrl(redirect: string): string {
-  return `${API_BASE}/runtime/auth/sso/authorize?redirect=${encodeURIComponent(redirect)}`;
+export function ssoLoginUrl(redirect: string, nonce: string): string {
+  return `${API_BASE}/runtime/auth/sso/authorize?redirect=${encodeURIComponent(redirect)}&nonce=${nonce}`;
 }
 
 let configPromise: Promise<RuntimeAuthConfig> | null = null;
@@ -94,10 +130,18 @@ let restorePromise: Promise<RuntimeUserProfile | null> | null = null;
  * 整个页面生命周期只跑一次——React StrictMode 会把 effect 执行两遍，
  * 两遍各自去换票的话，第二遍拿到的是已经作废的票，还会把第一遍的结果覆盖成未登录。
  */
-export function restoreLogin(): Promise<RuntimeUserProfile | null> {
+export function restoreLogin(host: string): Promise<RuntimeUserProfile | null> {
   restorePromise ??= (async () => {
     const ticket = takeTicketFromUrl();
-    return ticket ? exchangeTicket(ticket) : fetchRuntimeUser();
+    if (ticket) {
+      try {
+        return await exchangeTicket(ticket, host);
+      } catch (err) {
+        // 票据换不了（过期、或是别人转发来的链接）：保持本机原有的登录态，而不是把人登出
+        console.warn('[nca] 登录票据无效，沿用本地登录态', err);
+      }
+    }
+    return fetchRuntimeUser();
   })().catch((err: unknown) => {
     console.warn('[nca] 登录态恢复失败', err);
     return null;
@@ -105,8 +149,9 @@ export function restoreLogin(): Promise<RuntimeUserProfile | null> {
   return restorePromise;
 }
 
-export async function exchangeTicket(ticket: string): Promise<RuntimeUserProfile> {
-  return saveLogin(await postAuth('/runtime/auth/exchange', { ticket }));
+/** 票据换 token，带上本浏览器发起登录时的 nonce 与当前宿主，供服务端核对票据归属 */
+export async function exchangeTicket(ticket: string, host: string): Promise<RuntimeUserProfile> {
+  return saveLogin(await postAuth('/runtime/auth/exchange', { ticket, nonce: takeLoginNonce(), host }));
 }
 
 export async function hostLogin(host: string, code: string): Promise<RuntimeUserProfile> {

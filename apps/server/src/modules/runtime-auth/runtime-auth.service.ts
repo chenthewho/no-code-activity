@@ -24,6 +24,13 @@ export interface RuntimeTokenPayload {
 }
 
 const RUNTIME_AUDIENCE = 'nca-runtime';
+
+/** C 端一次性票据的内容：SSO 发起的绑定浏览器 nonce，小程序换的标记来源 */
+interface RuntimeTicket {
+  userId: string;
+  nonce?: string;
+  source?: 'wechat_mp';
+}
 /** 换票 / 宿主登录按 IP 限流，挡住穷举票据与刷号 */
 const LOGIN_ATTEMPTS_PER_MINUTE = 60;
 
@@ -45,7 +52,9 @@ export class RuntimeAuthService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    this.sso.register('runtime', (profile, redirect) => this.completeSso(profile, redirect));
+    this.sso.register('runtime', (profile, redirect, nonce) =>
+      this.completeSso(profile, redirect, nonce),
+    );
   }
 
   authConfig(): RuntimeAuthConfig {
@@ -61,27 +70,37 @@ export class RuntimeAuthService implements OnModuleInit {
   }
 
   /** 发起 SSO：跳回地址必须落在白名单源上，否则就是一个开放重定向 */
-  async beginSso(redirect: string | undefined): Promise<string> {
-    return this.sso.begin('runtime', this.assertRedirect(redirect));
+  async beginSso(redirect: string | undefined, nonce: string | undefined): Promise<string> {
+    return this.sso.begin('runtime', this.assertRedirect(redirect), nonce);
   }
 
   /** IdP 认证通过：建号，签一次性票据挂在跳回地址上 */
-  private async completeSso(profile: OidcProfile, redirect: string): Promise<string> {
+  private async completeSso(profile: OidcProfile, redirect: string, nonce: string): Promise<string> {
     const user = await this.upsertUser('sso', {
       externalId: profile.id,
       nickname: profile.nickname,
       avatar: profile.avatar,
     });
-    const ticket = await this.sso.issueTicket('runtime', { userId: user.id });
+    const ticket = await this.sso.issueTicket('runtime', { userId: user.id, nonce } satisfies RuntimeTicket);
     const target = new URL(redirect);
     target.searchParams.set('nca_ticket', ticket);
     return target.toString();
   }
 
-  /** 活动页拿回跳 URL 上的票据换 token */
-  async exchange(ticket: string, ip?: string): Promise<RuntimeLoginResult> {
+  /**
+   * 活动页拿回跳 URL 上的票据换 token。SSO 票据核对发起浏览器的 nonce；
+   * 小程序票据没有浏览器 nonce 可绑，只允许在小程序宿主里换——转发到普通浏览器里打开无效。
+   */
+  async exchange(
+    ticket: string,
+    ip?: string,
+    binding: { nonce?: string; host?: string } = {},
+  ): Promise<RuntimeLoginResult> {
     await this.throttle(ip);
-    const { userId } = await this.sso.consumeTicket<{ userId: string }>('runtime', ticket);
+    const { userId, source } = await this.sso.consumeTicket<RuntimeTicket>('runtime', ticket, binding.nonce);
+    if (source === 'wechat_mp' && binding.host !== 'wechat_mini_program') {
+      throw new BadRequestException('该登录票据只能在小程序内使用');
+    }
     const user = await this.prisma.runtimeUser.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('用户不存在');
     return this.loginResult(user);
@@ -103,7 +122,10 @@ export class RuntimeAuthService implements OnModuleInit {
     await this.throttle(ip);
     const identity = await this.verifyWechatCode(code);
     const user = await this.upsertUser('wechat_mp', identity);
-    const ticket = await this.sso.issueTicket('runtime', { userId: user.id });
+    const ticket = await this.sso.issueTicket('runtime', {
+      userId: user.id,
+      source: 'wechat_mp',
+    } satisfies RuntimeTicket);
     return { ticket, expiresIn: 60 };
   }
 
