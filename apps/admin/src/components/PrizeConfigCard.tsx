@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Space, Table, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { prizeApi, type PrizeInput, type PrizeItem } from '../api';
+import { prizeApi, type PrizeItem } from '../api';
 import { ImagePicker } from './designer/ImagePicker';
 
 interface Props {

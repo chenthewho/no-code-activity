@@ -1,0 +1,42 @@
+# 每次推送与 PR：类型检查、lint、全量测试、全量构建。
+# 测试全部用内存实现 / 桩替代 MySQL、Redis 与外部服务，CI 不需要起任何容器。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # prisma generate 只读 schema，不连库；给个占位让 env() 解析得过
+      DATABASE_URL: mysql://ci:ci@localhost:3306/ci
+    steps:
+      - uses: actions/checkout@v4
+
+      # 版本取自 package.json 的 packageManager
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @nca/server prisma:generate
+
+      - name: 类型检查
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: 测试
+        run: pnpm test
+      - name: 构建
+        run: pnpm build

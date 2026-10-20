@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react';
 import { MATERIAL_CATEGORY } from '@nca/shared';
 import { defineMaterial, type MaterialComponentProps } from '../types';
 import { commonStyleSchema, defineMeta, prop, styleProp } from '../utils/schema';

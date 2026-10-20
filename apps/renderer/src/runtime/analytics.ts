@@ -10,7 +10,7 @@ interface PendingEvent {
 }
 
 let activityId = '';
-let pending: PendingEvent[] = [];
+const pending: PendingEvent[] = [];
 let timer: number | null = null;
 let flushing = false;
 

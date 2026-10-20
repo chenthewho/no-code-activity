@@ -27,7 +27,7 @@ let activityId: string | undefined;
 let host: string | undefined;
 let outcomeReported = false;
 let jsErrors = 0;
-let pending: PendingEvent[] = [];
+const pending: PendingEvent[] = [];
 let timer: number | null = null;
 /**
  * 首屏渲染前页面是否进过后台。后台标签页里 rAF 不触发，「首屏耗时」会一直算到用户

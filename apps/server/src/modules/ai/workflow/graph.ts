@@ -149,7 +149,7 @@ async function askForTool<T>(
   userText: string,
 ): Promise<T> {
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userText }];
-  let turn = await deps.llm.runTurn({
+  const turn = await deps.llm.runTurn({
     system: buildSystemPrompt({ catalog: deps.catalog }),
     messages,
     tools: [tool],
@@ -413,7 +413,7 @@ export function buildWorkflow(deps: WorkflowDeps) {
         deps.llm.toolChoiceMode === 'auto'
           ? buildTools(deps.permissions).filter((t) => t.name === 'apply_patches')
           : buildTools(deps.permissions);
-      let turn = await deps.llm.runTurn({
+      const turn = await deps.llm.runTurn({
         system: buildSystemPrompt({ catalog: deps.catalog }),
         messages,
         tools,

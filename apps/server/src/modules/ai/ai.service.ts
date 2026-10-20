@@ -257,7 +257,7 @@ export class AiService {
           this.llm.toolChoiceMode === 'auto'
             ? buildTools(permissions).filter((t) => t.name === 'apply_patches')
             : buildTools(permissions);
-        let turn = await this.llm.runTurn({
+        const turn = await this.llm.runTurn({
           system: buildSystemPrompt({ catalog }),
           messages,
           tools,
