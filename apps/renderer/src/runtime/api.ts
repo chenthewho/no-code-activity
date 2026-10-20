@@ -1,4 +1,5 @@
 import { API_BASE } from './api-base';
+import type { AppointmentSceneView } from '@nca/shared';
 import { LoginRequiredError, authHeaders } from './auth';
 
 /**
@@ -96,7 +97,16 @@ export interface AppointmentResult {
   already: boolean;
 }
 
-/** 活动预约：一人一场次一次，重复预约返回 already */
+/** 预约场次：剩余名额、状态与「我约过没有」。登录用户按 token 认，访客按设备上的访客 id */
+export async function fetchAppointmentScenes(activityId: string): Promise<AppointmentSceneView[]> {
+  const url = new URL(`${API_BASE}/runtime/activities/${activityId}/appointment-scenes`);
+  url.searchParams.set('gid', getOrCreateGuestId());
+  const response = await fetch(url.toString(), { headers: authHeaders() });
+  if (!response.ok) throw new Error(`预约场次加载失败 (${response.status})`);
+  return (await response.json()) as AppointmentSceneView[];
+}
+
+/** 活动预约：一人一场次一次，重复预约返回 already；约满、已开场会被拒绝 */
 export function bookAppointment(input: {
   activityId: string;
   sceneId: string;

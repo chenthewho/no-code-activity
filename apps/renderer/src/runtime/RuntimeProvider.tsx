@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { DslAction, FinalDsl } from '@nca/dsl';
-import type { RuntimeUserProfile } from '@nca/shared';
+import type { AppointmentSceneView, RuntimeUserProfile } from '@nca/shared';
 import type { ExpressionContext } from './expression';
 import { resolveCondition, resolveValue } from './props-parser';
 import {
@@ -19,7 +19,13 @@ import {
   type DataSourceMap,
 } from './datasource';
 import { detectHost } from './host/browser';
-import { drawLottery, getOrCreateGuestId, submitForm, bookAppointment } from './api';
+import {
+  bookAppointment,
+  drawLottery,
+  fetchAppointmentScenes,
+  getOrCreateGuestId,
+  submitForm,
+} from './api';
 import {
   LoginRequiredError,
   clearRuntimeToken,
@@ -48,6 +54,8 @@ interface RuntimeValue {
   dataSources: DataSourceMap;
   openModals: string[];
   toasts: ToastItem[];
+  /** 后台配置的预约场次；页面上没有预约组件或还没加载到时为 null */
+  appointmentScenes: AppointmentSceneView[] | null;
   /** 组件抛事件的统一入口，由 CanvasRenderer 绑到每个节点上 */
   emit: (nodeId: string, event: string, payload?: Record<string, unknown>) => void;
   buildContext: (scope?: Record<string, unknown>) => ExpressionContext;
@@ -105,6 +113,7 @@ export function RuntimeProvider({
   const [openModals, setOpenModals] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastSeq = useRef(0);
+  const [appointmentScenes, setAppointmentScenes] = useState<AppointmentSceneView[] | null>(null);
   const [user, setUser] = useState<RuntimeUserProfile | null>(null);
   // 同 ctxRef：动作是异步串行的，登录完成后紧随其后的动作要立刻读到新用户
   const userRef = useRef<RuntimeUserProfile | null>(null);
@@ -241,6 +250,20 @@ export function RuntimeProvider({
     },
     [dsl.dataSources, buildContext],
   );
+
+  // 预约场次的名额与「我约过没有」是运行时数据：页面上有预约组件才拉，约完重拉
+  const hasAppointment = useMemo(
+    () => Object.values(dsl.craftJson).some((node) => node.type.resolvedName === 'Appointment'),
+    [dsl.craftJson],
+  );
+  const refreshAppointments = useCallback(async () => {
+    if (!hasAppointment || !dsl.meta.activityId) return;
+    try {
+      setAppointmentScenes(await fetchAppointmentScenes(dsl.meta.activityId));
+    } catch (err) {
+      console.warn('[nca] 预约场次加载失败', err);
+    }
+  }, [dsl.meta.activityId, hasAppointment]);
 
   const runAction = useCallback(
     async (action: DslAction, scope?: Record<string, unknown>): Promise<void> => {
@@ -408,6 +431,8 @@ export function RuntimeProvider({
             console.error('[nca] 预约失败', err);
             pushToast(err instanceof Error ? err.message : '预约失败', 'error', 3000);
           }
+          // 成功、约满、已截止都重拉一次，让按钮和剩余名额跟上服务端
+          void refreshAppointments();
           return;
         }
 
@@ -437,6 +462,7 @@ export function RuntimeProvider({
       ensureLogin,
       host,
       pushToast,
+      refreshAppointments,
       refreshDataSource,
       withParticipant,
     ],
@@ -457,6 +483,16 @@ export function RuntimeProvider({
         if (binding.trigger === 'onCustom') return binding.customEvent === event;
         return binding.trigger.toLowerCase() === `on${event}`.toLowerCase();
       });
+
+      // 预约是预约组件的内建行为：拖进来就能约，不必再绑「预约」动作。
+      // 运营自己绑了预约动作的以绑定为准，免得一次点击约两遍
+      if (
+        event === 'appointment' &&
+        dsl.craftJson[nodeId]?.type.resolvedName === 'Appointment' &&
+        !bindings.some((binding) => binding.actions.some((action) => action.type === 'appointment'))
+      ) {
+        void runAction({ type: 'appointment', sceneId: '' }, { payload, nodeId });
+      }
 
       for (const binding of bindings) {
         void (async () => {
@@ -508,6 +544,12 @@ export function RuntimeProvider({
    * 登录 / 退出后重拉一次；其余数据源不等，免得每个页面首屏都多等一次 /me。
    */
   const userId = user?.id ?? '';
+
+  // 等登录态恢复完再拉预约场次：「我约过没有」按登录用户算；登录 / 退出后重拉
+  useEffect(() => {
+    void authReadyRef.current.then(refreshAppointments);
+  }, [refreshAppointments, userId]);
+
   const dependsOnUser = useCallback((ds: FinalDsl['dataSources'][number]) => JSON.stringify(ds).includes('user.'), []);
 
   const startDataSources = useCallback(
@@ -572,6 +614,7 @@ export function RuntimeProvider({
       dataSources,
       openModals: visibleModals,
       toasts,
+      appointmentScenes,
       emit,
       buildContext,
       closeModal,
@@ -585,6 +628,7 @@ export function RuntimeProvider({
       dataSources,
       visibleModals,
       toasts,
+      appointmentScenes,
       emit,
       buildContext,
       closeModal,

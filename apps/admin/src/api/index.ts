@@ -371,6 +371,38 @@ export const prizeApi = {
   remove: (id: string) => request<void>(`/prizes/${id}`, { method: 'DELETE' }),
 };
 
+export interface AppointmentSceneItem {
+  id: string;
+  activityId: string;
+  sceneId: string;
+  name: string;
+  startAt: string | null;
+  endAt: string | null;
+  /** 名额，null 不限 */
+  capacity: number | null;
+  /** 已约人数 */
+  booked: number;
+  sort: number;
+}
+
+export interface AppointmentSceneInput {
+  name: string;
+  startAt?: string | null;
+  endAt?: string | null;
+  capacity?: number | null;
+  sort?: number;
+}
+
+export const appointmentApi = {
+  list: (activityId: string) =>
+    request<AppointmentSceneItem[]>('/appointment-scenes', { query: { activityId } }),
+  create: (body: AppointmentSceneInput & { activityId: string; sceneId: string }) =>
+    request<AppointmentSceneItem>('/appointment-scenes', { method: 'POST', body }),
+  update: (id: string, body: AppointmentSceneInput) =>
+    request<AppointmentSceneItem>(`/appointment-scenes/${id}`, { method: 'PATCH', body }),
+  remove: (id: string) => request<void>(`/appointment-scenes/${id}`, { method: 'DELETE' }),
+};
+
 export interface ChannelItem {
   id: string;
   activityId: string;

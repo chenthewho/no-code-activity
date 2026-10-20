@@ -131,6 +131,7 @@ model Activity {
   assets      Asset[]
   prizes      Prize[]
   channels    Channel[]
+  appointmentScenes AppointmentScene[]
   submissions FormSubmission[]
   aiRuns      AiRun[]
 
@@ -431,6 +432,28 @@ model AiCheckpointWrite {
  * 活动预约记录。一个用户对一个场次只能预约一次（@@unique 兜底并发），
  * 防止重复刷。capacity / 时段等配置后续按需扩展，v1 只做「预约上/已预约过」。
  */
+/// 预约场次（时段）：名额与开场时间由服务端执行。活动一个场次都没配时，预约不限场次与名额（兼容早期活动）
+model AppointmentScene {
+  id         String    @id @default(cuid())
+  activityId String
+  activity   Activity  @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  /// 场次编码：预约组件与预约记录用它关联，活动内唯一
+  sceneId    String
+  name       String
+  startAt    DateTime?
+  endAt      DateTime?
+  /// 名额，null 不限
+  capacity   Int?
+  /// 已约人数，与 capacity 在同一条 UPDATE 里比较并自增，并发下不会超卖
+  booked     Int       @default(0)
+  sort       Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([activityId, sceneId])
+  @@map("appointment_scene")
+}
+
 model AppointmentRecord {
   id         String   @id @default(cuid())
   activityId String

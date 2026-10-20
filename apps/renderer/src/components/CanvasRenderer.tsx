@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { CraftNode } from '@nca/dsl';
 import { componentMap, getMaterial } from '@nca/materials';
-import { ROOT_NODE_ID } from '@nca/shared';
+import { ROOT_NODE_ID, type AppointmentSceneView } from '@nca/shared';
 import { evaluateBinding } from '../runtime/expression';
 import { exposureTargets, observeExposure } from '../runtime/exposure';
 import { resolveCondition, resolveProps } from '../runtime/props-parser';
@@ -114,7 +114,7 @@ function SingleNode({
   node: CraftNode;
   skipLoop?: boolean;
 }) {
-  const { dsl, buildContext, emit, editing, openModals, host } = useRuntime();
+  const { dsl, buildContext, emit, editing, openModals, appointmentScenes, host } = useRuntime();
   const scope = useContext(ScopeContext);
   const exposure = useContext(ExposureContext);
   const ctx = buildContext(scope);
@@ -138,7 +138,7 @@ function SingleNode({
   if (!editing && supported && supported.length > 0 && !supported.includes(host.type)) return null;
 
   const props = resolveProps(node.props, ctx);
-  const runtimeProps = injectRuntimeProps(node, nodeId, openModals);
+  const runtimeProps = injectRuntimeProps(node, nodeId, { openModals, appointmentScenes });
 
   const children =
     node.nodes.length > 0
@@ -185,16 +185,20 @@ function SingleNode({
 
 /**
  * 注入由运行时掌控、而非 DSL 配置的 props。
- * 目前只有弹窗的开关态：modal.open/close 动作改的是运行时的 openModals，
- * 不写回 DSL，这样同一份 DSL 才能被反复打开关闭。
+ * - 弹窗的开关态：modal.open/close 动作改的是运行时的 openModals，
+ *   不写回 DSL，这样同一份 DSL 才能被反复打开关闭。
+ * - 预约组件的场次：剩余名额、状态、「我约过没有」随访问者与时间变化，由运行时向服务端拉取。
  */
 function injectRuntimeProps(
   node: CraftNode,
   nodeId: string,
-  openModals: string[],
+  runtime: { openModals: string[]; appointmentScenes: AppointmentSceneView[] | null },
 ): Record<string, unknown> {
   if (node.type.resolvedName === 'Modal') {
-    return { visible: openModals.includes(nodeId) };
+    return { visible: runtime.openModals.includes(nodeId) };
+  }
+  if (node.type.resolvedName === 'Appointment' && runtime.appointmentScenes) {
+    return { scenes: runtime.appointmentScenes };
   }
   return {};
 }

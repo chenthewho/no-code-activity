@@ -21,7 +21,8 @@ export type ActivitySource =
   | { query: string }
   | { body: string }
   | { prizeParam: string }
-  | { channelParam: string };
+  | { channelParam: string }
+  | { sceneParam: string };
 
 interface AccessRule {
   need: AccessNeed;
@@ -75,6 +76,14 @@ export class ActivityAccessGuard implements CanActivate {
       });
       if (!prize) throw new NotFoundException('奖品不存在');
       return prize.activityId;
+    }
+    if ('sceneParam' in source) {
+      const scene = await this.prisma.appointmentScene.findUnique({
+        where: { id: pick(req.params?.[source.sceneParam]) },
+        select: { activityId: true },
+      });
+      if (!scene) throw new NotFoundException('场次不存在');
+      return scene.activityId;
     }
     const channel = await this.prisma.channel.findUnique({
       where: { id: pick(req.params?.[source.channelParam]) },

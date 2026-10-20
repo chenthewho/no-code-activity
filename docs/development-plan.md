@@ -1,7 +1,7 @@
 # 零代码活动页平台 · 开发规划
 
 > **落地进度（2026-10-19）**：M0 – M4 全部完成。M3 的 SSO 与 COS STS 直传、M4 的多宿主、
-> 性能、监控告警、权限细化、物料版本升级策略均已落地并端到端验证，332 项单测。
+> 性能、监控告警、权限细化、物料版本升级策略均已落地并端到端验证，343 项单测。
 > 实施中相对本文的调整记录在文末「实施偏差」一节，各里程碑的完成情况与踩过的坑见第 9 节。
 
 > Admin（管理后台）+ Designer（拖拽设计器）+ Renderer（C 端渲染器）+ Server（NestJS）
@@ -300,7 +300,7 @@ renderer 的 `lottery.draw` 动作已接入（写回 `state.prizeIndex`），adm
   `POST /runtime/forms` 落 `form_submission`、renderer `form.submit` 动作。
 - 预约：新增 `appointment_record` 表（`@@unique(activityId, sceneId, userId)` 去重）、
   `POST /runtime/appointment`（重复预约返回 already）、`Appointment` 物料 +
-  renderer `appointment` 动作。容量/时段配置留待扩展。
+  renderer `appointment` 动作。~~容量/时段配置留待扩展~~ → 2026-10-20 已补齐，见下方「预约场次」。
 
 **③ 已完成（2026-08-07）**：渠道链接与分享落地页。
 - `ChannelModule`：`GET/POST/DELETE /channels`，链接 = `ACTIVITY_BASE_URL/act/:id?ch=<code>&<params>`
@@ -377,6 +377,18 @@ renderer 的 `lottery.draw` 动作已接入（写回 `state.prizeIndex`），adm
   后台标签页里不记，切回前台时仍在视口里的才补记。
 - 报表「组件效果」：曝光、点击、点击率（点击次数 ÷ 曝光人次）、转化率，组件名取线上版本 DSL 里的名称；
   上线前的老数据没有曝光，比率显示「—」。
+
+**预约场次（2026-10-20，补齐 ② 留下的容量 / 时段）**：
+- 新增 `appointment_scene`：场次编码、名称、开始 / 结束时间、名额（不填不限）、已约人数；活动详情「预约场次」卡片配置，
+  名额不能改到少于已约人数，有人约了的场次不能删。
+- 名额在服务端执行：`UPDATE … SET booked = booked + 1 WHERE … AND (capacity IS NULL OR booked < capacity)` 占位，
+  与写预约记录同一个事务——同一人并发重复提交时记录被唯一约束挡下，占的名额随事务回滚。
+  实测 12 个访客并发抢 3 个名额：恰好 3 个成功，计数与记录一致。开场即停止预约，场次不存在直接拒绝。
+- 一个场次都没配的早期活动保持原行为（按组件上的场次编码记录、不限名额）。
+- 预约组件（v1.1.0）：点击即预约（运行时内建；运营绑了预约动作的以绑定为准，不会约两遍）；
+  「单个场次」显示时间与剩余名额，「场次列表」列出全部场次。剩余名额、约满 / 已截止 / 已预约由运行时向
+  `GET /runtime/activities/:id/appointment-scenes` 拉取后注入（登录用户按 token、访客按设备 id 判断约过没有），约完重拉。
+- 升级物料后要同步物料注册表（`pnpm --filter @nca/server seed` 里的物料同步），否则发布会被「物料版本高于注册表」拦下。
 
 ### M4 完成情况（2026-10-19）
 

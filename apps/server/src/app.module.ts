@@ -16,6 +16,7 @@ import { ChannelModule } from './modules/channel/channel.module';
 import { MaterialModule } from './modules/material/material.module';
 import { MonitorModule } from './modules/monitor/monitor.module';
 import { PrizeModule } from './modules/prize/prize.module';
+import { AppointmentModule } from './modules/appointment/appointment.module';
 import { RuntimeModule } from './modules/runtime/runtime.module';
 import { RuntimeAuthModule } from './modules/runtime-auth/runtime-auth.module';
 import { SsoModule } from './modules/sso/sso.module';
@@ -47,6 +48,7 @@ import { UserModule } from './modules/user/user.module';
     TemplateModule,
     MaterialModule,
     PrizeModule,
+    AppointmentModule,
     RuntimeModule,
     AiModule,
   ],

@@ -46,7 +46,7 @@ export { RewardListMaterial } from './components/RewardList';
 export { InviteFriendMaterial } from './components/InviteFriend';
 export { InviteRecordMaterial } from './components/InviteRecord';
 export { FormMaterial } from './components/Form';
-export { AppointmentMaterial } from './components/Appointment';
+export { AppointmentMaterial, formatSceneTime } from './components/Appointment';
 
 export type { PageProps } from './components/Page';
 export type { ContainerProps } from './components/Container';

@@ -25,6 +25,9 @@ import { Public } from '../../common/decorators';
 import { markRaw } from '../../common/interceptors/transform.interceptor';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { appointmentSchema, type AppointmentDto } from '../appointment/appointment.dto';
+import { AppointmentModule } from '../appointment/appointment.module';
+import { AppointmentService } from '../appointment/appointment.service';
 import { drawSchema, type DrawDto } from '../prize/prize.dto';
 import { PrizeModule } from '../prize/prize.module';
 import { PrizeService } from '../prize/prize.service';
@@ -40,16 +43,6 @@ const submitFormSchema = z.object({
   data: z.record(z.string(), z.unknown()),
 });
 type SubmitFormDto = z.infer<typeof submitFormSchema>;
-
-/** C 端活动预约：一人一场次只能约一次（表上 @@unique 兜底并发） */
-const appointmentSchema = z.object({
-  activityId: z.string().min(1),
-  sceneId: z.string().min(1),
-  /** 访客标识，仅活动不要求登录时使用；登录用户以 token 为准 */
-  userId: z.string().min(1).max(128).optional(),
-  contact: z.string().max(60).optional(),
-});
-type AppointmentDto = z.infer<typeof appointmentSchema>;
 
 /**
  * C 端运行时接口。
@@ -177,32 +170,6 @@ export class RuntimeService {
     });
   }
 
-  /** 活动预约：一人一场次一次。并发下唯一约束兜底，重复预约返回 already */
-  async bookAppointment(dto: AppointmentDto, userId: string) {
-    const where = {
-      activityId_sceneId_userId: {
-        activityId: dto.activityId,
-        sceneId: dto.sceneId,
-        userId,
-      },
-    };
-    const existing = await this.prisma.appointmentRecord.findUnique({ where });
-    if (existing) return { booked: true, already: true };
-    try {
-      await this.prisma.appointmentRecord.create({
-        data: {
-          activityId: dto.activityId,
-          sceneId: dto.sceneId,
-          userId,
-          contact: dto.contact ?? null,
-        },
-      });
-    } catch (err) {
-      if ((err as { code?: string }).code === 'P2002') return { booked: true, already: true };
-      throw err;
-    }
-    return { booked: true, already: false };
-  }
 }
 
 /**
@@ -224,6 +191,7 @@ class RuntimeController {
   constructor(
     private readonly service: RuntimeService,
     private readonly prizeService: PrizeService,
+    private readonly appointments: AppointmentService,
   ) {}
 
   @Public()
@@ -264,6 +232,19 @@ class RuntimeController {
   async prizes(@Param('id') id: string) {
     return markRaw(await this.prizeService.publicList(id));
   }
+
+  @Public()
+  @Get(':id/appointment-scenes')
+  @ApiOperation({ summary: '预约场次：剩余名额、状态，以及这位访问者约过哪些' })
+  async appointmentScenes(
+    @Param('id') id: string,
+    @Query('gid') guestId: string | undefined,
+    @RuntimeUser() user: RuntimeTokenPayload | null,
+  ) {
+    // 「约过没有」只是展示：登录用户按 token，访客按设备上的访客 id
+    const viewerId = user?.sub ?? (guestId?.slice(0, 128) || undefined);
+    return markRaw(await this.appointments.publicList(id, viewerId));
+  }
 }
 
 /** C 端抽奖。独立于 activities 前缀，路径与开发计划中的 /runtime/lottery/draw 对齐 */
@@ -293,7 +274,10 @@ class RuntimeLotteryController {
 @Controller('runtime')
 @UseGuards(RuntimeUserGuard)
 class RuntimeMutationController {
-  constructor(private readonly service: RuntimeService) {}
+  constructor(
+    private readonly service: RuntimeService,
+    private readonly appointments: AppointmentService,
+  ) {}
 
   @Public()
   @Post('forms')
@@ -309,18 +293,18 @@ class RuntimeMutationController {
 
   @Public()
   @Post('appointment')
-  @ApiOperation({ summary: '活动预约：一人一场次一次，重复预约返回 already' })
+  @ApiOperation({ summary: '活动预约：一人一场次一次，重复预约返回 already；约满 / 已开场拒绝' })
   async book(
     @Body(new ZodValidationPipe(appointmentSchema)) dto: AppointmentDto,
     @RuntimeUser() user: RuntimeTokenPayload | null,
   ) {
     const userId = await this.service.resolveParticipant(dto.activityId, user, dto.userId);
-    return markRaw(await this.service.bookAppointment(dto, userId));
+    return markRaw(await this.appointments.book(dto, userId));
   }
 }
 
 @Module({
-  imports: [PrizeModule, RuntimeAuthModule],
+  imports: [PrizeModule, AppointmentModule, RuntimeAuthModule],
   controllers: [RuntimeController, RuntimeLotteryController, RuntimeMutationController],
   providers: [RuntimeService],
 })

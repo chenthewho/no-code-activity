@@ -44,7 +44,9 @@ const HARD_RULES = `
   奖品列表用 \`ds_prizes\` 数据源喂给 Lottery 的 prizes 字段。
 - \`form.submit\`：绑定在 Form 物料的 submit 事件上，动作内部把表单值上报服务端。
   需要 Form 物料时用它收集输入。
-- \`appointment\`：绑定在 Appointment 物料的 appointment 事件上，动作内部完成预约。
+- \`appointment\`：Appointment 物料点击即预约（运行时内建），不必再绑这个动作；
+  要按场次列表展示就把它的 layout 设为 list，场次的时间与名额由运营在后台配置。
+  只有「用别的按钮去约某一场」时才在那个按钮上绑 appointment 动作并填 sceneId。
 - \`component.trigger\`：向指定节点派发自定义事件。nodeId 指向目标组件，event 是
   目标组件上配过 onCustom 的自定义事件名。典型场景：点「开始」按钮去触发抽奖。
 

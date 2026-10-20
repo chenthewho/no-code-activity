@@ -274,10 +274,14 @@ describe('抽奖闭环（接口驱动）', () => {
 
   it('连抽两次都能停在各自的结果上，不会卡在上一轮', async () => {
     vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ index: 1 }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ index: 7 }) });
+    // 按地址分流：埋点合批上报也走 fetch，时机取决于计时器，不能让它吃掉抽奖的返回值
+    const draws = [1, 7];
+    const isDraw = (url: unknown) => String(url).includes('/api/draw');
+    const fetchMock = vi.fn(async (url: unknown) =>
+      isDraw(url)
+        ? { ok: true, json: async () => ({ index: draws.shift() }) }
+        : { ok: true, json: async () => ({}) },
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     render(<RendererSurface dsl={drawDrivenDsl()} />);
@@ -295,7 +299,7 @@ describe('抽奖闭环（接口驱动）', () => {
       vi.advanceTimersByTime(5000);
     });
     expect(screen.getByText('开奖结果：8 号奖')).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.filter(([url]) => isDraw(url))).toHaveLength(2);
   });
 });
 

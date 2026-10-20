@@ -8,6 +8,7 @@ import { ACTIVITY_STATUS, PERMISSION } from '@nca/shared';
 import { activityApi, type VersionItem } from '../api';
 import { ImagePicker } from '../components/designer/ImagePicker';
 import { PrizeConfigCard } from '../components/PrizeConfigCard';
+import { AppointmentSceneCard } from '../components/AppointmentSceneCard';
 import { ChannelConfigCard } from '../components/ChannelConfigCard';
 import { AnalyticsReportCard } from '../components/AnalyticsReportCard';
 import { ActivityMemberCard } from '../components/ActivityMemberCard';
@@ -268,6 +269,8 @@ export function ActivityDetailPage() {
       <ActivityMemberCard activityId={activityId} canManage={canManageActivity(activity?.access)} />
 
       <PrizeConfigCard activityId={activityId} canEdit={editable && can(PERMISSION.PRIZE_MANAGE)} />
+
+      <AppointmentSceneCard activityId={activityId} canEdit={editable} />
 
       <ChannelConfigCard activityId={activityId} canEdit={editable && can(PERMISSION.CHANNEL_MANAGE)} />
 
