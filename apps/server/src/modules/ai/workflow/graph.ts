@@ -1,14 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { Annotation, END, START, StateGraph, interrupt } from '@langchain/langgraph';
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
-import {
-  applyPatches,
-  createEmptyDsl,
-  dslPatchSchema,
-  validateFinalDsl,
-  type DslPatch,
-  type FinalDsl,
-} from '@nca/dsl';
+import { createEmptyDsl, validateFinalDsl, type DslPatch, type FinalDsl } from '@nca/dsl';
 import type { AiEvent, AiInterrupt, AiResume } from '@nca/shared';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { DraftService } from '../../dsl/draft.service';
@@ -16,6 +9,7 @@ import type { PublishService } from '../../publish/publish.service';
 import { replayAssistantContent, type AnthropicClient } from '../llm/anthropic.client';
 import type { MaterialCatalog } from '../llm/catalog';
 import { buildSystemPrompt, renderPageOutline } from '../llm/prompt';
+import { runPatchLoop } from '../llm/patch-loop';
 import { buildTools } from '../llm/tools';
 import { requiredEndpoints, resolveInjections } from './injection';
 
@@ -413,75 +407,49 @@ export function buildWorkflow(deps: WorkflowDeps) {
         deps.llm.toolChoiceMode === 'auto'
           ? buildTools(deps.permissions).filter((t) => t.name === 'apply_patches')
           : buildTools(deps.permissions);
-      const turn = await deps.llm.runTurn({
+      // 有补丁没生效时把问题回给模型改，最多改两轮（见 runPatchLoop）
+      const result = await runPatchLoop({
+        llm: deps.llm,
         system: buildSystemPrompt({ catalog: deps.catalog }),
-        messages,
         tools,
-        toolChoice: { type: 'tool', name: 'apply_patches' },
+        messages,
+        current,
+        applyOptions: {
+          knownMaterials: deps.catalog.names,
+          containerMaterials: deps.catalog.containers,
+          materialVersions: deps.catalog.versions,
+        },
         onThinking: (delta) => deps.emit({ type: 'thinking', delta }),
         onText: (delta) => deps.emit({ type: 'text', delta }),
+        onFix: (round, issues) =>
+          deps.emit({
+            type: 'status',
+            status: `有 ${issues.length} 处没生效，正在让 AI 修正（第 ${round} 轮）`,
+            node: 'build',
+          }),
       });
-      let call = turn.toolUses.find((t) => t.name === 'apply_patches');
+      const { summary, issues } = result;
+      const preview = result.patches.map((p) => ({ op: p.op, text: describePatch(p) }));
 
-      if (!call) {
-        // auto 模式下模型可能只回了文字；回放（去 thinking）后再要求一次
-        const retry = await deps.llm.runTurn({
-          system: buildSystemPrompt({ catalog: deps.catalog }),
-          messages: [
-            ...messages,
-            { role: 'assistant', content: replayAssistantContent(turn) },
-            {
-              role: 'user',
-              content:
-                '你上一条没有调用 apply_patches。请直接调用 apply_patches 产出页面改动，不要回复文字或调用其他工具。',
-            },
-          ],
-          tools,
-          toolChoice: { type: 'tool', name: 'apply_patches' },
-          onThinking: (delta) => deps.emit({ type: 'thinking', delta }),
-          onText: (delta) => deps.emit({ type: 'text', delta }),
-        });
-        call = retry.toolUses.find((t) => t.name === 'apply_patches');
-      }
-
-      if (!call) throw new Error('模型没有产出任何页面改动');
-      const input = call.input as { summary: string; patches: unknown[] };
-
-      // 逐条过协议：模型写错一条不该毁掉整批
-      const patches: DslPatch[] = [];
-      const rejected: string[] = [];
-      for (const [i, raw] of input.patches.entries()) {
-        const parsed = dslPatchSchema.safeParse(raw);
-        if (parsed.success) patches.push(parsed.data);
-        else rejected.push(`第 ${i + 1} 条：${parsed.error.issues[0]?.message ?? '结构错误'}`);
-      }
-
-      const result = applyPatches(current, patches, {
-        knownMaterials: deps.catalog.names,
-        containerMaterials: deps.catalog.containers,
-        materialVersions: deps.catalog.versions,
-      });
-      const issues = [...rejected, ...result.issues.map((i) => i.message)];
-      const preview = patches.map((p) => ({ op: p.op, text: describePatch(p) }));
-
-      deps.emit({ type: 'patch', summary: input.summary, patches: preview, issues });
+      deps.emit({ type: 'patch', summary, patches: preview, issues });
       // 草稿允许「还没填完」，先存下来让运营在预览里看到真东西
       await deps.draft.save(activityId, result.dsl, deps.userId);
       deps.emit({ type: 'dsl', dsl: result.dsl });
 
+      const fixed = result.rounds > 1 ? `，自动修正 ${result.rounds - 1} 轮` : '';
       return {
         endpoints,
-        summary: input.summary,
+        summary,
         card: {
           kind: 'approve',
           node: 'build',
           title: '预览并确认',
           why: '右侧就是线上会长的样子。确认后进入发布环节，放弃则回到组件清单重来。',
-          done: `${input.summary}（生效 ${result.applied} 条改动）`,
+          done: `${summary}（生效 ${result.applied} 条改动${fixed}）`,
           missing: issues.length
             ? `有 ${issues.length} 处没能生效：${issues.slice(0, 3).join('；')}`
             : undefined,
-          summary: input.summary,
+          summary,
           patches: preview,
         } satisfies AiInterrupt,
       };

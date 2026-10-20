@@ -339,9 +339,10 @@ LangGraph 官方只提供 SQLite / Postgres / Redis 三种实现，本项目是 
 
 ## 11. 已知限制
 
-1. **`build` 节点只让模型出一轮补丁**（`tool_choice` 强制 `apply_patches`），
-   没有做「模型看到校验报错后自己改」的回环。目前靠 prompt 里的硬约束 +
-   跳过并记账兜住，复杂页面可能有若干条补丁不生效，会在卡片上列出来。
+1. ~~`build` 节点只让模型出一轮补丁~~（已解决，2026-10-20）。`llm/patch-loop.ts` 的 `runPatchLoop`：
+   有补丁没生效（协议不合法、物料不认识、引用悬空……）时，把问题清单、本批新建节点的真实 id 与应用后的页面大纲
+   作为这次 `apply_patches` 的 `tool_result` 回给模型，让它在已生效的基础上只出修正补丁，最多再改 2 轮；
+   assistant 消息原样带回（含 thinking 块）。仍改不对的如实列在卡片上。AI 编辑（局部修改）走同一个回环。
 2. ~~业务动作未全部接入~~（已解决）。`lottery.draw`、`appointment`、`form.submit`、
    `component.trigger`（2026-08-08）均已接入，`login` / `logout` 走 C 端统一登录
    （2026-10-19）；各动作与 `user` 命名空间的标准接法写在 `llm/prompt.ts` 的硬约束里。

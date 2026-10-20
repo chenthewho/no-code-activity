@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type Anthropic from '@anthropic-ai/sdk';
 import { Command } from '@langchain/langgraph';
-import { applyPatches, dslPatchSchema, type DslPatch, type FinalDsl } from '@nca/dsl';
+import type { FinalDsl } from '@nca/dsl';
 import { PERMISSION, type AiEvent, type AiInterrupt, type AiResume } from '@nca/shared';
 // Prisma.JsonNull 是值不是类型，这里不能用 import type
 import { Prisma } from '@prisma/client';
@@ -9,9 +9,10 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { DraftService } from '../dsl/draft.service';
 import { PublishService } from '../publish/publish.service';
 import { PrismaCheckpointSaver } from './checkpointer/prisma-checkpointer';
-import { AnthropicClient, LlmRefusalError, replayAssistantContent } from './llm/anthropic.client';
+import { AnthropicClient, LlmRefusalError } from './llm/anthropic.client';
 import { loadMaterialCatalog, type MaterialCatalog } from './llm/catalog';
 import { buildSystemPrompt, renderPageOutline } from './llm/prompt';
+import { runPatchLoop } from './llm/patch-loop';
 import { buildTools } from './llm/tools';
 import { buildWorkflow } from './workflow/graph';
 import type { EditDto, StartRunDto } from './ai.dto';
@@ -257,58 +258,29 @@ export class AiService {
           this.llm.toolChoiceMode === 'auto'
             ? buildTools(permissions).filter((t) => t.name === 'apply_patches')
             : buildTools(permissions);
-        const turn = await this.llm.runTurn({
+        // 有补丁没生效时把问题回给模型改，最多改两轮（见 runPatchLoop）
+        const result = await runPatchLoop({
+          llm: this.llm,
           system: buildSystemPrompt({ catalog }),
-          messages,
           tools,
-          toolChoice: { type: 'tool', name: 'apply_patches' },
+          messages,
+          current,
+          applyOptions: {
+            knownMaterials: catalog.names,
+            containerMaterials: catalog.containers,
+            materialVersions: catalog.versions,
+          },
           onThinking: (delta) => queue.push({ type: 'thinking', delta }),
           onText: (delta) => queue.push({ type: 'text', delta }),
-        });
-
-        let call = turn.toolUses.find((t) => t.name === 'apply_patches');
-        if (!call) {
-          // auto 模式下模型可能只回了文字；回放（去 thinking）后再要求一次
-          const retry = await this.llm.runTurn({
-            system: buildSystemPrompt({ catalog }),
-            messages: [
-              ...messages,
-              { role: 'assistant', content: replayAssistantContent(turn) },
-              {
-                role: 'user',
-                content:
-                  '你上一条没有调用 apply_patches。请直接调用 apply_patches 产出改动，不要回复文字或调用其他工具。',
-              },
-            ],
-            tools,
-            toolChoice: { type: 'tool', name: 'apply_patches' },
-            onThinking: (delta) => queue.push({ type: 'thinking', delta }),
-            onText: (delta) => queue.push({ type: 'text', delta }),
-          });
-          call = retry.toolUses.find((t) => t.name === 'apply_patches');
-        }
-        if (!call) throw new Error('模型没有产出任何改动');
-        const input = call.input as { summary: string; patches: unknown[] };
-
-        const patches: DslPatch[] = [];
-        const rejected: string[] = [];
-        for (const [i, raw] of input.patches.entries()) {
-          const parsed = dslPatchSchema.safeParse(raw);
-          if (parsed.success) patches.push(parsed.data);
-          else rejected.push(`第 ${i + 1} 条：${parsed.error.issues[0]?.message ?? '结构错误'}`);
-        }
-
-        const result = applyPatches(current, patches, {
-          knownMaterials: catalog.names,
-          containerMaterials: catalog.containers,
-          materialVersions: catalog.versions,
+          onFix: (round, issues) =>
+            queue.push({ type: 'status', status: `有 ${issues.length} 处没生效，正在让 AI 修正（第 ${round} 轮）` }),
         });
 
         queue.push({
           type: 'patch',
-          summary: input.summary,
-          patches: patches.map((p) => ({ op: p.op, text: p.op })),
-          issues: [...rejected, ...result.issues.map((i) => i.message)],
+          summary: result.summary,
+          patches: result.patches.map((p) => ({ op: p.op, text: p.op })),
+          issues: result.issues,
         });
         // 不落库：应不应用由运营在设计器里点，服务端只负责算出结果
         queue.push({ type: 'dsl', dsl: result.dsl satisfies FinalDsl });
