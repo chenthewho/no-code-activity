@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, DatePicker, Form, Input, Popconfirm, Space, Table, Tag, message } from 'antd';
 import { DashboardOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -12,6 +12,7 @@ import { ChannelConfigCard } from '../components/ChannelConfigCard';
 import { AnalyticsReportCard } from '../components/AnalyticsReportCard';
 import { ActivityMemberCard } from '../components/ActivityMemberCard';
 import { GrayReleaseCard } from '../components/GrayReleaseCard';
+import { VersionDiffModal } from '../components/VersionDiffModal';
 import { useAuthStore } from '../stores/auth';
 import { ACCESS_LABEL, canEditActivity, canManageActivity } from '../utils/access';
 
@@ -34,6 +35,7 @@ export function ActivityDetailPage() {
   const can = useAuthStore((s) => s.can);
 
   const [form] = Form.useForm<BasicInfoValues>();
+  const [diffing, setDiffing] = useState<number | null>(null);
 
   const { data: activity } = useQuery({
     queryKey: ['activity', activityId],
@@ -102,6 +104,17 @@ export function ActivityDetailPage() {
     onError: (err: Error) => void message.error(err.message),
   });
 
+  // 灰度中的版本不走回滚，用灰度卡片上的「转全量」
+  const rollbackAction = (row: VersionItem) =>
+    publishable && activity?.publishedVersion !== row.version && activity?.grayVersion !== row.version ? (
+      <Popconfirm
+        title={`确认将线上版本切回 v${row.version}？`}
+        onConfirm={() => rollbackMutation.mutate(row.version)}
+      >
+        <a>回滚到此版本</a>
+      </Popconfirm>
+    ) : null;
+
   const columns = [
     {
       title: '版本',
@@ -124,17 +137,15 @@ export function ActivityDetailPage() {
     },
     {
       title: '操作',
-      width: 140,
-      render: (_: unknown, row: VersionItem) =>
-        // 灰度中的版本不走回滚，用灰度卡片上的「转全量」
-        publishable && activity?.publishedVersion !== row.version && activity?.grayVersion !== row.version ? (
-          <Popconfirm
-            title={`确认将线上版本切回 v${row.version}？`}
-            onConfirm={() => rollbackMutation.mutate(row.version)}
-          >
-            <a>回滚到此版本</a>
-          </Popconfirm>
-        ) : null,
+      width: 220,
+      render: (_: unknown, row: VersionItem) => (
+        <Space>
+          {versions.some((v) => v.version < row.version) && (
+            <a onClick={() => setDiffing(row.version)}>对比上一版</a>
+          )}
+          {rollbackAction(row)}
+        </Space>
+      ),
     },
   ];
 
@@ -242,6 +253,17 @@ export function ActivityDetailPage() {
       <Card title="发布历史">
         <Table rowKey="id" dataSource={versions} columns={columns} pagination={false} size="small" />
       </Card>
+
+      {diffing !== null && (
+        <VersionDiffModal
+          key={diffing}
+          activityId={activityId}
+          open
+          onClose={() => setDiffing(null)}
+          versions={versions}
+          to={{ version: diffing }}
+        />
+      )}
 
       <ActivityMemberCard activityId={activityId} canManage={canManageActivity(activity?.access)} />
 

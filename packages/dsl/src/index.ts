@@ -11,3 +11,4 @@ export * from './patch';
 export * from './migrate';
 export * from './factory';
 export * from './assets';
+export * from './diff';

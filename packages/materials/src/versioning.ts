@@ -1,4 +1,10 @@
-import { compareVersion, type CraftNode, type FinalDsl, type JsonValue } from '@nca/dsl';
+import {
+  BASELINE_MATERIAL_VERSION,
+  compareVersion,
+  type CraftNode,
+  type FinalDsl,
+  type JsonValue,
+} from '@nca/dsl';
 
 /**
  * 物料版本升级策略。
@@ -18,8 +24,7 @@ import { compareVersion, type CraftNode, type FinalDsl, type JsonValue } from '@
  *   存量活动都下线后再删代码。
  */
 
-/** 版本字段出现之前创建的节点，一律按 1.0.0 处理——当时所有物料都还是 1.x */
-export const BASELINE_MATERIAL_VERSION = '1.0.0';
+export { BASELINE_MATERIAL_VERSION };
 
 export interface MaterialMigration {
   /** 从哪个大版本升上来：fromMajor = 1 表示把 1.x 的 props 改写成 2.x 的形状 */

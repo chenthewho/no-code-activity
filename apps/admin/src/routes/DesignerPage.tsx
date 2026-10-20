@@ -18,6 +18,7 @@ import { DesignerHeader, type DeviceMode } from '../components/designer/Designer
 import { SaveAsTemplateModal } from '../components/designer/SaveAsTemplateModal';
 import { AiPanel } from '../components/designer/AiPanel';
 import { PageSettingsModal } from '../components/designer/PageSettingsModal';
+import { VersionDiffModal } from '../components/VersionDiffModal';
 import {
   GrayRuleFields,
   fromGrayRule,
@@ -46,6 +47,7 @@ export function DesignerPage() {
   const [publishing, setPublishing] = useState(false);
   const [changelog, setChangelog] = useState('');
   const [publishMode, setPublishMode] = useState<'full' | 'gray'>('full');
+  const [diffOpen, setDiffOpen] = useState(false);
   const [grayForm] = Form.useForm<GrayRuleValues>();
   const [device, setDevice] = useState<DeviceMode>('mobile');
   const [leftTab, setLeftTab] = useState('materials');
@@ -156,6 +158,11 @@ export function DesignerPage() {
     queryFn: () => activityApi.detail(activityId),
   });
   const canGray = activity?.status === 'published' && Boolean(activity.publishedVersion);
+  const { data: versions = [] } = useQuery({
+    queryKey: ['versions', activityId],
+    queryFn: () => activityApi.versions(activityId),
+    enabled: diffOpen,
+  });
 
   const publishMutation = useMutation({
     mutationFn: async () => {
@@ -377,7 +384,14 @@ export function DesignerPage() {
         confirmLoading={publishMutation.isPending}
         okText="确认发布"
       >
-        <p style={{ color: '#888' }}>发布会生成一个不可变的版本快照，可随时回滚。</p>
+        <p style={{ color: '#888' }}>
+          发布会生成一个不可变的版本快照，可随时回滚。
+          {activity?.publishedVersion && (
+            <a style={{ marginLeft: 8 }} onClick={() => setDiffOpen(true)}>
+              查看本次改动
+            </a>
+          )}
+        </p>
         {hostWarnings.length > 0 && (
           <Alert
             type="warning"
@@ -430,6 +444,17 @@ export function DesignerPage() {
           onChange={(e) => setChangelog(e.target.value)}
         />
       </Modal>
+
+      {diffOpen && activity?.publishedVersion && (
+        <VersionDiffModal
+          activityId={activityId}
+          open
+          onClose={() => setDiffOpen(false)}
+          versions={versions}
+          fromVersion={activity.publishedVersion}
+          to={{ dsl, label: '当前草稿' }}
+        />
+      )}
     </Layout>
   );
 }

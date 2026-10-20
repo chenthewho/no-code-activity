@@ -230,6 +230,14 @@ export class ActivityController {
     return this.publish.listVersions(id);
   }
 
+  @Get(':id/versions/:version')
+  @ApiOperation({ summary: '某个发布版本的完整 DSL（版本对比用）' })
+  @RequirePermissions(PERMISSION.ACTIVITY_VIEW)
+  @RequireActivityAccess('view')
+  versionDsl(@Param('id') id: string, @Param('version', new ZodValidationPipe(z.coerce.number().int().positive())) version: number) {
+    return this.publish.versionDsl(id, version);
+  }
+
   @Post(':id/rollback')
   @ApiOperation({ summary: '回滚到指定版本（只切指针，秒级生效）' })
   @RequirePermissions(PERMISSION.ACTIVITY_PUBLISH)

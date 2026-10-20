@@ -73,6 +73,9 @@ export function migrateDsl(input: unknown, migrations: Migration[] = DSL_MIGRATI
   return { dsl: current, from, to, applied };
 }
 
+/** 节点上还没有物料版本字段时的版本：字段出现之前创建的节点，一律按 1.0.0 处理——当时所有物料都还是 1.x */
+export const BASELINE_MATERIAL_VERSION = '1.0.0';
+
 export function compareVersion(a: string, b: string): number {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);

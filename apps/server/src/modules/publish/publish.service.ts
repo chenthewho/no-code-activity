@@ -286,6 +286,16 @@ export class PublishService {
     await this.prisma.activity.update({ where: { id: activityId }, data: { status: next } });
   }
 
+  /** 某个发布版本的完整 DSL：版本对比与回滚前查看用 */
+  async versionDsl(activityId: string, version: number) {
+    const row = await this.prisma.activityVersion.findUnique({
+      where: { activityId_version: { activityId, version } },
+      select: { version: true, dsl: true, changelog: true, createdAt: true },
+    });
+    if (!row) throw new NotFoundException(`版本 v${version} 不存在`);
+    return row;
+  }
+
   async listVersions(activityId: string) {
     return this.prisma.activityVersion.findMany({
       where: { activityId },

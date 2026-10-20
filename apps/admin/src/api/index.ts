@@ -123,6 +123,10 @@ export const activityApi = {
     request<PublishResult>(`/activities/${id}/gray/promote`, { method: 'POST' }),
   stopGray: (id: string) => request<void>(`/activities/${id}/gray`, { method: 'DELETE' }),
   versions: (id: string) => request<VersionItem[]>(`/activities/${id}/versions`),
+  versionDsl: (id: string, version: number) =>
+    request<{ version: number; dsl: unknown; changelog?: string; createdAt: string }>(
+      `/activities/${id}/versions/${version}`,
+    ),
   rollback: (id: string, version: number) =>
     request<PublishResult>(`/activities/${id}/rollback`, { method: 'POST', body: { version } }),
   changeStatus: (id: string, status: 'published' | 'offline') =>
