@@ -64,3 +64,34 @@ describe('AnalyticsService.allow', () => {
     await expect(service.allow('1.2.3.4')).resolves.toBe(false);
   });
 });
+
+describe('AnalyticsService.report', () => {
+  it('页面曝光算 PV，组件曝光与点击、转化按节点合并，按点击排序', async () => {
+    const prisma = fakePrisma();
+    prisma.analyticsEvent.groupBy = vi.fn(async (args: { by: string[] }) =>
+      args.by.length === 1
+        ? [
+            { event: 'expose', _count: { _all: 130 } },
+            { event: 'click', _count: { _all: 12 } },
+          ]
+        : [
+            { nodeId: 'ROOT', event: 'expose', _count: { _all: 100 } },
+            { nodeId: 'btn', event: 'expose', _count: { _all: 20 } },
+            { nodeId: 'btn', event: 'click', _count: { _all: 2 } },
+            { nodeId: 'lottery', event: 'expose', _count: { _all: 10 } },
+            { nodeId: 'lottery', event: 'click', _count: { _all: 10 } },
+            { nodeId: 'lottery', event: 'convert', _count: { _all: 4 } },
+          ],
+    ) as never;
+    prisma.analyticsEvent.count = vi.fn(async (args: { where: Record<string, unknown> }) =>
+      'OR' in args.where ? 100 : 136,
+    ) as never;
+
+    const report = await buildService(prisma, fakeRedis()).report('act_1');
+    expect(report.pageViews).toBe(100);
+    expect(report.byNode).toEqual([
+      { nodeId: 'lottery', exposures: 10, clicks: 10, converts: 4 },
+      { nodeId: 'btn', exposures: 20, clicks: 2, converts: 0 },
+    ]);
+  });
+});

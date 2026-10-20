@@ -400,7 +400,8 @@ export interface AnalyticsReport {
   pageViews: number;
   clicks: number;
   converts: number;
-  byNode: { nodeId: string; clicks: number }[];
+  /** 逐节点：曝光每次访问只记一次，点击与转化按次数 */
+  byNode: { nodeId: string; exposures: number; clicks: number; converts: number }[];
   trend: { date: string; pageViews: number }[];
 }
 

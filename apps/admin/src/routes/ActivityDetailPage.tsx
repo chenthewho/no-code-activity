@@ -271,7 +271,9 @@ export function ActivityDetailPage() {
 
       <ChannelConfigCard activityId={activityId} canEdit={editable && can(PERMISSION.CHANNEL_MANAGE)} />
 
-      {can(PERMISSION.ANALYTICS_VIEW) && <AnalyticsReportCard activityId={activityId} />}
+      {can(PERMISSION.ANALYTICS_VIEW) && (
+        <AnalyticsReportCard activityId={activityId} publishedVersion={activity?.publishedVersion} />
+      )}
     </Space>
   );
 }

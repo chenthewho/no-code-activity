@@ -1,8 +1,9 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { CraftNode } from '@nca/dsl';
 import { componentMap, getMaterial } from '@nca/materials';
 import { ROOT_NODE_ID } from '@nca/shared';
 import { evaluateBinding } from '../runtime/expression';
+import { exposureTargets, observeExposure } from '../runtime/exposure';
 import { resolveCondition, resolveProps } from '../runtime/props-parser';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import { EditableNode } from './EditableNode';
@@ -17,8 +18,45 @@ function ScopeProvider({ scope, children }: { scope: Record<string, unknown>; ch
   return <ScopeContext.Provider value={merged}>{children}</ScopeContext.Provider>;
 }
 
+/** 需要上报曝光的节点；编辑态为空 */
+const ExposureContext = createContext<Set<string>>(new Set());
+
 export function CanvasRenderer() {
-  return <NodeRenderer nodeId={ROOT_NODE_ID} />;
+  const { dsl, editing } = useRuntime();
+  const targets = useMemo(() => (editing ? new Set<string>() : exposureTargets(dsl)), [dsl, editing]);
+  return (
+    <ExposureContext.Provider value={targets}>
+      <NodeRenderer nodeId={ROOT_NODE_ID} />
+    </ExposureContext.Provider>
+  );
+}
+
+/**
+ * 曝光探针：包一层 display: contents——不生成盒子、不影响布局，只为拿到物料的根元素交给
+ * IntersectionObserver。物料可能晚一点才渲染出根元素（弹窗打开前什么都不渲染），所以每次渲染后都对一下。
+ */
+function ExposureProbe({ nodeId, children }: { nodeId: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const observed = useRef<{ el: Element; stop: () => void } | null>(null);
+  useEffect(() => {
+    const el = ref.current?.firstElementChild ?? null;
+    if (observed.current?.el === el) return;
+    observed.current?.stop();
+    observed.current = el ? { el, stop: observeExposure(el, nodeId) } : null;
+  });
+  // 清空引用：StrictMode 会卸载再挂载一次，留着旧引用的话第二次挂载会以为还在观察
+  useEffect(
+    () => () => {
+      observed.current?.stop();
+      observed.current = null;
+    },
+    [],
+  );
+  return (
+    <div ref={ref} style={{ display: 'contents' }}>
+      {children}
+    </div>
+  );
 }
 
 export function NodeRenderer({ nodeId }: { nodeId: string }) {
@@ -78,6 +116,7 @@ function SingleNode({
 }) {
   const { dsl, buildContext, emit, editing, openModals, host } = useRuntime();
   const scope = useContext(ScopeContext);
+  const exposure = useContext(ExposureContext);
   const ctx = buildContext(scope);
 
   if (!skipLoop && !resolveCondition(node.control?.if, ctx)) return null;
@@ -139,8 +178,9 @@ function SingleNode({
       {rendered}
     </NodeErrorBoundary>
   );
-  // 只有编辑态才套标记层，线上渲染保持零额外开销
-  return editing ? <EditableNode nodeId={nodeId}>{guarded}</EditableNode> : guarded;
+  // 编辑态套标记层；线上只给要算曝光的节点套探针，其余保持零额外开销
+  if (editing) return <EditableNode nodeId={nodeId}>{guarded}</EditableNode>;
+  return exposure.has(nodeId) ? <ExposureProbe nodeId={nodeId}>{guarded}</ExposureProbe> : guarded;
 }
 
 /**
