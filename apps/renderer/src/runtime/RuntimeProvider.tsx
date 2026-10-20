@@ -13,6 +13,7 @@ import type { AppointmentSceneView, RuntimeUserProfile } from '@nca/shared';
 import type { ExpressionContext } from './expression';
 import { resolveCondition, resolveValue } from './props-parser';
 import {
+  evaluateComputed,
   fetchDataSource,
   initDataSourceState,
   toExpressionData,
@@ -138,18 +139,42 @@ export function RuntimeProvider({
   }>({ pageState, dataSources });
   ctxRef.current = { pageState, dataSources };
 
+  const computedSources = useMemo(
+    () => dsl.dataSources.filter((ds) => ds.type === 'computed'),
+    [dsl.dataSources],
+  );
+  /** 上一次算出的数据源命名空间与它的输入；输入引用都没变就直接复用 */
+  const derivedRef = useRef<{ inputs: unknown[]; dataSource: Record<string, unknown> } | null>(null);
+
   const buildContext = useCallback(
-    (scope?: Record<string, unknown>): ExpressionContext => ({
-      state: ctxRef.current.pageState,
-      dataSource: toExpressionData(ctxRef.current.dataSources),
-      meta: dsl.meta,
-      query,
-      // 宿主标识：同一 DSL 可在不同宿主上按 {{ host === 'sdk_portrait' }} 分支
-      host: host.type,
-      user: toUserContext(userRef.current),
-      ...scope,
-    }),
-    [dsl.meta, host, query],
+    (scope?: Record<string, unknown>): ExpressionContext => {
+      const { pageState: state, dataSources: sources } = ctxRef.current;
+      const base = {
+        state,
+        meta: dsl.meta,
+        query,
+        // 宿主标识：同一 DSL 可在不同宿主上按 {{ host === 'sdk_portrait' }} 分支
+        host: host.type,
+        user: toUserContext(userRef.current),
+      };
+      // computed 数据源读取时现算：state、其它数据源、登录用户一变就是新值，
+      // 同一个事件里前一个动作刚写进 state 的值，后一个动作读 computed 也能立刻看到。
+      // 按声明顺序求值，后面的可以引用前面的
+      const inputs = [state, sources, userRef.current, computedSources];
+      const cached = derivedRef.current;
+      let dataSource: Record<string, unknown>;
+      if (cached && cached.inputs.every((input, i) => input === inputs[i])) {
+        dataSource = cached.dataSource;
+      } else {
+        dataSource = toExpressionData(sources);
+        for (const ds of computedSources) {
+          dataSource[ds.id] = evaluateComputed(ds, { ...base, dataSource });
+        }
+        derivedRef.current = { inputs, dataSource };
+      }
+      return { ...base, dataSource, ...scope };
+    },
+    [computedSources, dsl.meta, host, query],
   );
 
   const pushToast = useCallback((message: string, level: ToastItem['level'], duration: number) => {
@@ -557,8 +582,8 @@ export function RuntimeProvider({
       const controller = new AbortController();
       const timers: number[] = [];
       for (const ds of sources) {
-        // 静态数据源在 initDataSourceState 里已就位，再跑一遍只会多一次无谓重渲染
-        if (ds.type === 'static') continue;
+        // 静态数据源在 initDataSourceState 里已就位，computed 在读取时现算，都不用跑
+        if (ds.type === 'static' || ds.type === 'computed') continue;
         if (ds.type === 'http' && !ds.autoLoad) continue;
 
         const load = async () => {

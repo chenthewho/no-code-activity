@@ -56,6 +56,9 @@ const HARD_RULES = `
 可做多宿主差异化展示）、\`user\`（C 端登录用户：\`user.loggedIn\` / \`user.nickname\` / \`user.avatar\` / \`user.id\`，
 未登录时 loggedIn 为 false、其余为空串）；循环子树里额外有 \`item\` / \`index\`；http 数据源的 transform 里有 \`response\`。
 
+多处要用同一个派生值（如「剩余次数 = 上限 - 已用」）时，建一个 \`computed\` 数据源写一次表达式，
+各处绑 \`{{ dataSource.<id> }}\`。它随 state、其它数据源、登录用户实时重算；只能引用排在它前面的 computed。
+
 支持：成员访问、下标、字面量、\`! - +\`、\`+ - * / %\`、比较、\`== != === !==\`、
 \`&& || ??\`、三元、括号、\`.length\`。
 

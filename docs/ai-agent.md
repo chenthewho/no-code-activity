@@ -345,7 +345,8 @@ LangGraph 官方只提供 SQLite / Postgres / Redis 三种实现，本项目是 
 2. ~~业务动作未全部接入~~（已解决）。`lottery.draw`、`appointment`、`form.submit`、
    `component.trigger`（2026-08-08）均已接入，`login` / `logout` 走 C 端统一登录
    （2026-10-19）；各动作与 `user` 命名空间的标准接法写在 `llm/prompt.ts` 的硬约束里。
-3. **`computed` 数据源只在挂载时算一次**，不随 state 变化。AI 不能用它做派生值。
+3. ~~`computed` 数据源只在挂载时算一次~~（已解决，2026-10-20）。渲染器在构建表达式上下文时按声明顺序现算，
+   随 state / 数据源 / 登录用户变化，同一事件里后一个动作也能读到前一个动作写入后的新值；prompt 里已允许 AI 用它做派生值。
 4. **未接 `fallbacks` 参数**。Opus 5 的安全分类器可能拒答（`stop_reason: refusal`），
    当前只是如实报错给运营，没有自动回落到 Opus 4.8。要开的话在
    `anthropic.client.ts` 里加 `betas: ['server-side-fallback-2026-07-01']` +

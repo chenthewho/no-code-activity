@@ -23,6 +23,23 @@ export function initDataSourceState(sources: DataSource[]): DataSourceMap {
   return map;
 }
 
+/**
+ * computed 数据源求值。由运行时在每次构建表达式上下文时现算，而不是挂载时算一次存起来——
+ * 它依赖的 state、其它数据源、登录用户一变，读到的就是新值。
+ */
+export function evaluateComputed(
+  ds: Extract<DataSource, { type: 'computed' }>,
+  ctx: ExpressionContext,
+): unknown {
+  try {
+    // 表达式写错或依赖还没就绪时求出 undefined（求值器不抛错），同样退回 fallback
+    const value = evaluateBinding(ds.expression, ctx);
+    return value === undefined ? (ds.fallback ?? null) : value;
+  } catch {
+    return ds.fallback ?? null;
+  }
+}
+
 export async function fetchDataSource(
   ds: DataSource,
   ctx: ExpressionContext,
@@ -33,11 +50,7 @@ export async function fetchDataSource(
   }
 
   if (ds.type === 'computed') {
-    try {
-      return { loading: false, data: evaluateBinding(ds.expression, ctx) };
-    } catch (err) {
-      return { loading: false, data: ds.fallback ?? null, error: String(err) };
-    }
+    return { loading: false, data: evaluateComputed(ds, ctx) };
   }
 
   try {

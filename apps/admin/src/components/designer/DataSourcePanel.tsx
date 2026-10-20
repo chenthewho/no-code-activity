@@ -148,7 +148,7 @@ function DataSourceForm({
       )}
 
       {ds.type === 'computed' && (
-        <Form.Item label="计算表达式" extra="可引用其它数据源与页面状态" style={{ marginBottom: 10 }}>
+        <Form.Item label="计算表达式" extra="可引用页面状态、其它数据源与登录用户，它们一变就自动重算；只能引用排在前面的计算数据源" style={{ marginBottom: 10 }}>
           <Input
             value={ds.expression}
             placeholder="{{ dataSource.rank.length }}"
