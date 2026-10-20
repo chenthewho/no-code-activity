@@ -13,6 +13,7 @@ export const CLIENT_EVENT_TYPES = [
 
 export const reportMonitorSchema = z.object({
   activityId: z.string().max(64).optional(),
+  version: z.number().int().positive().optional(),
   host: z.string().max(32).optional(),
   events: z
     .array(

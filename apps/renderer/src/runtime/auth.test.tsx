@@ -1,16 +1,19 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { finalDslSchema, type FinalDsl } from '@nca/dsl';
+import { RendererSurface } from '../components/RendererSurface';
+import { resetAuthState } from './auth';
 
 /**
  * C 端登录闭环：票据换 token → user 命名空间 → 业务接口带 token →
  * 服务端要求登录时拉起宿主登录并重试。
  *
- * restoreLogin 在模块级只跑一次，每个用例都重新加载模块拿一份干净的。
+ * restoreLogin 在模块级只跑一次，每个用例前用 resetAuthState 清掉——
+ * 不用 vi.resetModules 重新加载整棵模块树，那在并行跑全量测试时慢到会超时。
  */
 async function loadSurface() {
-  vi.resetModules();
-  return (await import('../components/RendererSurface')).RendererSurface;
+  resetAuthState();
+  return RendererSurface;
 }
 
 function makeDsl(events: unknown[] = [], dataSources: unknown[] = []): FinalDsl {

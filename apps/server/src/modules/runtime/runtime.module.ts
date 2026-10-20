@@ -9,15 +9,18 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
+  Res,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { authConfigSchema, finalDslSchema, manifestSchema, type FinalDsl, type Manifest } from '@nca/dsl';
-import { ACTIVITY_STATUS } from '@nca/shared';
+import { ACTIVITY_STATUS, matchGray, type GrayRule, type GrayVisitor } from '@nca/shared';
 import { Public } from '../../common/decorators';
 import { markRaw } from '../../common/interceptors/transform.interceptor';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -90,35 +93,56 @@ export class RuntimeService {
     const cached = this.authPolicies.get(activityId);
     if (cached && cached.expireAt > Date.now()) return cached.loginRequired;
 
-    const version = await this.currentVersion(activityId);
-    const meta = (version.dsl as { meta?: { auth?: unknown } }).meta;
-    const auth = authConfigSchema.parse(meta?.auth ?? {});
-    const loginRequired = auth.required || auth.loginMode !== 'none';
+    // 灰度期间新旧两版可能登录要求不同，取更严的那个：
+    // 放过访客的那一版不能成为绕过登录限次的口子
+    const activity = await this.onlineActivity(activityId);
+    const versions = [activity.publishedVersion!, ...(activity.grayVersion ? [activity.grayVersion] : [])];
+    let loginRequired = false;
+    for (const v of versions) {
+      const row = await this.loadVersion(activityId, v);
+      const meta = (row.dsl as { meta?: { auth?: unknown } }).meta;
+      const auth = authConfigSchema.parse(meta?.auth ?? {});
+      loginRequired ||= auth.required || auth.loginMode !== 'none';
+    }
     this.authPolicies.set(activityId, { loginRequired, expireAt: Date.now() + AUTH_POLICY_TTL_MS });
     return loginRequired;
   }
 
-  private async currentVersion(activityId: string) {
+  private async onlineActivity(activityId: string) {
     const activity = await this.prisma.activity.findFirst({
       where: { id: activityId, deletedAt: null },
-      select: { status: true, publishedVersion: true },
+      select: { status: true, publishedVersion: true, grayVersion: true, grayRule: true },
     });
     if (!activity) throw new NotFoundException('活动不存在');
     if (activity.status !== ACTIVITY_STATUS.PUBLISHED || !activity.publishedVersion) {
       throw new NotFoundException('活动未发布或已下线');
     }
-
-    const version = await this.prisma.activityVersion.findUnique({
-      where: {
-        activityId_version: { activityId, version: activity.publishedVersion },
-      },
-    });
-    if (!version) throw new NotFoundException('发布版本数据缺失');
-    return version;
+    return activity;
   }
 
-  async manifest(activityId: string): Promise<Manifest> {
-    const version = await this.currentVersion(activityId);
+  private async loadVersion(activityId: string, version: number) {
+    const row = await this.prisma.activityVersion.findUnique({
+      where: { activityId_version: { activityId, version } },
+    });
+    if (!row) throw new NotFoundException('发布版本数据缺失');
+    return row;
+  }
+
+  /**
+   * 这位访客该看哪个版本：灰度进行中且命中规则看灰度版，否则看全量版。
+   * 不带访客信息（如服务端内部取策略）一律按全量版。
+   */
+  private async currentVersion(activityId: string, visitor?: GrayVisitor) {
+    const activity = await this.onlineActivity(activityId);
+    const gray =
+      Boolean(visitor && activity.grayVersion && activity.grayRule) &&
+      matchGray(activity.grayRule as unknown as GrayRule, visitor!);
+    const version = await this.loadVersion(activityId, gray ? activity.grayVersion! : activity.publishedVersion!);
+    return Object.assign(version, { gray });
+  }
+
+  async manifest(activityId: string, visitor?: GrayVisitor): Promise<Manifest> {
+    const version = await this.currentVersion(activityId, visitor);
     if (!version.manifestUrl) throw new NotFoundException('该版本缺少 manifest');
     // manifest 存的是 URL，这里按存量数据重建一份等价结构，避免多一跳网络请求
     const dsl = finalDslSchema.parse(version.dsl);
@@ -135,9 +159,9 @@ export class RuntimeService {
     });
   }
 
-  async dsl(activityId: string): Promise<FinalDsl> {
-    const version = await this.currentVersion(activityId);
-    return finalDslSchema.parse(version.dsl);
+  async dsl(activityId: string, visitor?: GrayVisitor): Promise<{ dsl: FinalDsl; version: number; gray: boolean }> {
+    const row = await this.currentVersion(activityId, visitor);
+    return { dsl: finalDslSchema.parse(row.dsl), version: row.version, gray: row.gray };
   }
 
   /** 表单提交：原样落 FormSubmission。userId 为登录用户或访客 id */
@@ -181,8 +205,21 @@ export class RuntimeService {
   }
 }
 
+/**
+ * 访客信息：渠道码与设备上的访客 id 来自地址参数，登录用户 id 来自服务端验过的 C 端 token。
+ * 灰度按设备分桶，只决定「看哪个版本」，不涉及任何权益，自报的访客 id 足够。
+ */
+function visitorOf(channel?: string, deviceId?: string, user?: RuntimeTokenPayload | null): GrayVisitor {
+  return {
+    channel: channel?.slice(0, 64) || undefined,
+    deviceId: deviceId?.slice(0, 128) || undefined,
+    userId: user?.sub,
+  };
+}
+
 @ApiTags('runtime')
 @Controller('runtime/activities')
+@UseGuards(RuntimeUserGuard)
 class RuntimeController {
   constructor(
     private readonly service: RuntimeService,
@@ -191,17 +228,34 @@ class RuntimeController {
 
   @Public()
   @Get(':id/dsl')
-  @ApiOperation({ summary: '取当前线上版本的 DSL（C 端回源）' })
-  async dsl(@Param('id') id: string) {
+  @ApiOperation({ summary: '取这位访客该看的线上版本 DSL（灰度期间按渠道 / 白名单 / 设备分桶选版本）' })
+  async dsl(
+    @Param('id') id: string,
+    @Query('ch') channel: string | undefined,
+    @Query('gid') deviceId: string | undefined,
+    @RuntimeUser() user: RuntimeTokenPayload | null,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.service.dsl(id, visitorOf(channel, deviceId, user));
+    // 版本号放响应头而不是改 DSL：快照不可变，埋点与监控据此区分新旧版本
+    res.setHeader('X-NCA-Version', String(result.version));
+    if (result.gray) res.setHeader('X-NCA-Gray', '1');
+    // 不同访客可能拿到不同版本，不能被共享缓存缓存
+    res.setHeader('Cache-Control', 'private, no-cache');
     // 不包 { code, message, data }：Renderer 与直读 CDN 走同一条解析路径
-    return markRaw(await this.service.dsl(id));
+    return markRaw(result.dsl);
   }
 
   @Public()
   @Get(':id/manifest')
-  @ApiOperation({ summary: '取当前线上版本的 manifest' })
-  async manifest(@Param('id') id: string) {
-    return markRaw(await this.service.manifest(id));
+  @ApiOperation({ summary: '取这位访客该看的线上版本 manifest' })
+  async manifest(
+    @Param('id') id: string,
+    @Query('ch') channel: string | undefined,
+    @Query('gid') deviceId: string | undefined,
+    @RuntimeUser() user: RuntimeTokenPayload | null,
+  ) {
+    return markRaw(await this.service.manifest(id, visitorOf(channel, deviceId, user)));
   }
 
   @Public()

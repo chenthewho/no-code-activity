@@ -126,6 +126,16 @@ export function fetchAuthConfig(): Promise<RuntimeAuthConfig> {
 let restorePromise: Promise<RuntimeUserProfile | null> | null = null;
 
 /**
+ * 清掉模块级的一次性状态（启动恢复、登录配置缓存、内存 token）。
+ * 只给测试用：真实页面每次打开都是新的 JS 环境，用不着它。
+ */
+export function resetAuthState(): void {
+  restorePromise = null;
+  configPromise = null;
+  memoryToken = null;
+}
+
+/**
  * 启动时恢复登录态：地址栏有票据就换 token，否则用本地 token 取用户。
  * 整个页面生命周期只跑一次——React StrictMode 会把 effect 执行两遍，
  * 两遍各自去换票的话，第二遍拿到的是已经作废的票，还会把第一遍的结果覆盖成未登录。

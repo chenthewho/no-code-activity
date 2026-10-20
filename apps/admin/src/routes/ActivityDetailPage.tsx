@@ -11,6 +11,7 @@ import { PrizeConfigCard } from '../components/PrizeConfigCard';
 import { ChannelConfigCard } from '../components/ChannelConfigCard';
 import { AnalyticsReportCard } from '../components/AnalyticsReportCard';
 import { ActivityMemberCard } from '../components/ActivityMemberCard';
+import { GrayReleaseCard } from '../components/GrayReleaseCard';
 import { useAuthStore } from '../stores/auth';
 import { ACCESS_LABEL, canEditActivity, canManageActivity } from '../utils/access';
 
@@ -110,6 +111,7 @@ export function ActivityDetailPage() {
         <Space>
           v{version}
           {activity?.publishedVersion === version && <Tag color="success">线上</Tag>}
+          {activity?.grayVersion === version && <Tag color="processing">灰度中</Tag>}
         </Space>
       ),
     },
@@ -124,7 +126,8 @@ export function ActivityDetailPage() {
       title: '操作',
       width: 140,
       render: (_: unknown, row: VersionItem) =>
-        publishable && activity?.publishedVersion !== row.version ? (
+        // 灰度中的版本不走回滚，用灰度卡片上的「转全量」
+        publishable && activity?.publishedVersion !== row.version && activity?.grayVersion !== row.version ? (
           <Popconfirm
             title={`确认将线上版本切回 v${row.version}？`}
             onConfirm={() => rollbackMutation.mutate(row.version)}
@@ -227,6 +230,14 @@ export function ActivityDetailPage() {
           </Button>
         </Form>
       </Card>
+
+      {activity?.grayVersion && (
+        <GrayReleaseCard
+          activity={activity}
+          canPublish={publishable}
+          canMonitor={can(PERMISSION.MONITOR_VIEW)}
+        />
+      )}
 
       <Card title="发布历史">
         <Table rowKey="id" dataSource={versions} columns={columns} pagination={false} size="small" />

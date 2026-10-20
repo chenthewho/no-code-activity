@@ -16,11 +16,15 @@ describe('loadDsl', () => {
   it('复用 index.html 内联脚本的预取请求，同一地址加载两次也只发一次请求', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    window.__NCA_DSL_PREFETCH__ = { url: '/dsl/a1', promise: Promise.resolve(VALID) };
+    window.__NCA_DSL_PREFETCH__ = {
+      url: '/dsl/a1',
+      promise: Promise.resolve({ data: VALID, version: '7' }),
+    };
 
     const first = await loadDsl('/dsl/a1');
     const second = await loadDsl('/dsl/a1');
     expect(first.dsl.meta.title).toBe('预取');
+    expect(first.version).toBe(7);
     expect(second.dsl.meta.title).toBe('预取');
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -28,7 +32,10 @@ describe('loadDsl', () => {
   it('地址不同不复用；预取失败后清掉，下一次重新请求', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(VALID)));
     vi.stubGlobal('fetch', fetchMock);
-    const failed = Promise.reject(new Error('HTTP 503'));
+    const failed = Promise.reject(new Error('HTTP 503')) as Promise<{
+      data: unknown;
+      version: string | null;
+    }>;
     window.__NCA_DSL_PREFETCH__ = { url: '/dsl/a1', promise: failed };
 
     await expect(loadDsl('/dsl/a1')).rejects.toMatchObject({ name: 'DslLoadError', status: 503 });

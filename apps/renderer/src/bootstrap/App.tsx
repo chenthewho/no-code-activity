@@ -3,9 +3,16 @@ import type { FinalDsl } from '@nca/dsl';
 import { RendererSurface } from '../components/RendererSurface';
 import { DslInvalidError, DslLoadError, loadDsl, parseDsl, preloadCriticalImages } from './loader';
 import { usePreviewChannel } from './preview-channel';
-import { API_BASE } from '../runtime/api';
+import { dslRequest } from '../runtime/api';
+import { initAnalytics } from '../runtime/analytics';
 import { BootSkeleton } from '../components/BootSkeleton';
-import { initMonitor, reportMonitor, wasHiddenBeforeBoot, watchWhiteScreen } from '../runtime/monitor';
+import {
+  initMonitor,
+  reportMonitor,
+  setMonitorVersion,
+  wasHiddenBeforeBoot,
+  watchWhiteScreen,
+} from '../runtime/monitor';
 import { resolveHostType } from '../runtime/host/browser';
 
 type Status = 'loading' | 'ready' | 'error';
@@ -54,9 +61,12 @@ export function App() {
 
     void (async () => {
       try {
-        const url = dslUrl ?? `${API_BASE}/runtime/activities/${activityId}/dsl`;
-        const result = await loadDsl(url, controller.signal);
+        const request = dslUrl ? { url: dslUrl, headers: {} } : dslRequest(activityId!);
+        const result = await loadDsl(request.url, controller.signal, request.headers);
         dslMsRef.current = Math.round(performance.now());
+        // 健康上报与埋点都带上这次看到的版本：灰度期间才分得清新旧版各自的表现
+        setMonitorVersion(result.version);
+        if (result.dsl.meta.activityId) initAnalytics(result.dsl.meta.activityId, result.version);
         result.warnings.forEach((w) => console.warn(`[nca] ${w}`));
         await preloadCriticalImages(result.dsl);
         setDsl(result.dsl);
@@ -88,7 +98,7 @@ export function App() {
   useEffect(() => {
     if (status !== 'ready' || preview.isPreview) return;
     window.clearTimeout(stallRef.current);
-    const frame = requestAnimationFrame(() => {
+    const report = () => {
       const hidden = wasHiddenBeforeBoot();
       reportMonitor('boot', {
         // 后台打开的页面耗时没有意义，只记这次访问、不记耗时
@@ -96,7 +106,13 @@ export function App() {
         detail: { dslMs: dslMsRef.current, ...(hidden ? { hidden: true } : {}) },
       });
       if (!hidden) watchWhiteScreen();
-    });
+    };
+    // 后台标签页里 rAF 不触发：等它的话，在后台打开、没看就关掉的访问连「来过」都记不上
+    if (document.visibilityState === 'hidden') {
+      report();
+      return;
+    }
+    const frame = requestAnimationFrame(report);
     return () => cancelAnimationFrame(frame);
   }, [status, preview.isPreview]);
 

@@ -5,6 +5,7 @@ import type {
   ActivityStatus,
   ActivitySummary,
   CurrentUser,
+  GrayRule,
   PageResult,
 } from '@nca/shared';
 import { request } from './client';
@@ -56,6 +57,10 @@ export interface ActivityListQuery {
 
 export interface ActivityDetail extends Omit<ActivitySummary, 'access'> {
   description?: string;
+  /** 灰度中的版本与规则，没有灰度时为 null */
+  grayVersion: number | null;
+  grayRule: GrayRule | null;
+  grayStartedAt: string | null;
   /** null：活动存在但当前用户无权访问（正常情况下服务端已 403，不会走到这里） */
   access: ActivityAccess | null;
 }
@@ -86,6 +91,7 @@ export interface PublishResult {
   dslUrl: string;
   manifestUrl: string;
   activityUrl: string;
+  gray?: boolean;
 }
 
 export const activityApi = {
@@ -106,8 +112,16 @@ export const activityApi = {
       { method: 'PUT', body: { dsl } },
     ),
 
-  publish: (id: string, changelog?: string) =>
-    request<PublishResult>(`/activities/${id}/publish`, { method: 'POST', body: { changelog } }),
+  publish: (id: string, changelog?: string, gray?: GrayRule) =>
+    request<PublishResult>(`/activities/${id}/publish`, {
+      method: 'POST',
+      body: { changelog, ...(gray ? { gray } : {}) },
+    }),
+  updateGray: (id: string, rule: GrayRule) =>
+    request<void>(`/activities/${id}/gray`, { method: 'PATCH', body: rule }),
+  promoteGray: (id: string) =>
+    request<PublishResult>(`/activities/${id}/gray/promote`, { method: 'POST' }),
+  stopGray: (id: string) => request<void>(`/activities/${id}/gray`, { method: 'DELETE' }),
   versions: (id: string) => request<VersionItem[]>(`/activities/${id}/versions`),
   rollback: (id: string, version: number) =>
     request<PublishResult>(`/activities/${id}/rollback`, { method: 'POST', body: { version } }),
@@ -442,10 +456,18 @@ export interface MonitorOverview {
     jsErrors: number;
   }[];
   topActivities: { activityId: string; title: string; problems: number }[];
+  /** 仅按活动筛选时有：各发布版本的失败率，灰度期间并排对比新旧版 */
+  byVersion: {
+    version: number;
+    attempts: number;
+    jsErrors: number;
+    rates: { dslInvalid: number; whiteScreen: number; loadError: number };
+  }[];
   recent: {
     id: string;
     type: string;
     activityId: string | null;
+    version: number | null;
     host: string | null;
     message: string | null;
     detail: unknown;

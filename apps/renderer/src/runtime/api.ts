@@ -27,6 +27,21 @@ export function getOrCreateGuestId(): string {
 }
 
 /**
+ * 活动 DSL 的请求地址。带上设备上的访客 id 与渠道码，服务端灰度期间据此决定这位访客看哪个版本；
+ * 登录态走请求头（白名单按登录用户匹配）。
+ *
+ * index.html 的内联预取脚本（vite.config.ts 的 dslPrefetch）拼的是同一个地址、带同一个请求头——
+ * 两边对不上，预取就白发了。改这里务必同步改那边。
+ */
+export function dslRequest(activityId: string): { url: string; headers: Record<string, string> } {
+  const url = new URL(`${API_BASE}/runtime/activities/${activityId}/dsl`);
+  url.searchParams.set('gid', getOrCreateGuestId());
+  const channel = new URLSearchParams(window.location.search).get('ch');
+  if (channel) url.searchParams.set('ch', channel);
+  return { url: url.toString(), headers: authHeaders() };
+}
+
+/**
  * 业务写接口统一走这里：带上登录态，错误体里的 message 抽出来给 toast 用，
  * 服务端判定「该活动需要登录」时抛 LoginRequiredError，由运行时拉起登录后重试。
  */

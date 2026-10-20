@@ -48,6 +48,24 @@ export type UpsertMemberDto = z.infer<typeof upsertMemberSchema>;
 
 export const transferOwnerSchema = z.object({ userId: z.string().min(1) });
 
+/** 灰度规则：至少要有一条能命中人的条件，否则灰度版本谁也看不到 */
+export const grayRuleSchema = z
+  .object({
+    percent: z.number().int().min(0).max(100).default(0),
+    channels: z.array(z.string().min(1).max(64)).max(20).default([]),
+    userIds: z.array(z.string().min(1).max(128)).max(500).default([]),
+  })
+  .refine((r) => r.percent > 0 || r.channels.length > 0 || r.userIds.length > 0, {
+    message: '灰度规则至少要设置比例、渠道或白名单中的一项',
+  });
+
+export const publishSchema = z.object({
+  changelog: z.string().max(500).optional(),
+  /** 带上即为灰度发布 */
+  gray: grayRuleSchema.optional(),
+});
+export type PublishDto = z.infer<typeof publishSchema>;
+
 /** 草稿保存：DSL 结构在 service 里用 finalDslSchema 校验，这里只管外层信封 */
 export const saveDraftSchema = z.object({
   dsl: z.unknown(),

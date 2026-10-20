@@ -10,13 +10,15 @@ interface PendingEvent {
 }
 
 let activityId = '';
+let version: number | undefined;
 const pending: PendingEvent[] = [];
 let timer: number | null = null;
 let flushing = false;
 
-/** 埋点一旦初始化就绑定当前活动；重复初始化以最后一次为准 */
-export function initAnalytics(id: string): void {
+/** 埋点一旦初始化就绑定当前活动；重复初始化以最后一次为准，已知的版本号不会被不带版本的调用抹掉 */
+export function initAnalytics(id: string, publishedVersion?: number): void {
   activityId = id;
+  if (publishedVersion !== undefined) version = publishedVersion;
   if (typeof window !== 'undefined' && 'sendBeacon' in navigator) {
     window.addEventListener('pagehide', flushNow);
   }
@@ -56,6 +58,7 @@ async function flush(): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         activityId,
+        version,
         events: batch.map((e) => ({ ...e, channel: e.channel ?? channel })),
       }),
       keepalive: true,
@@ -70,7 +73,7 @@ async function flush(): Promise<void> {
 function flushNow(): void {
   if (!activityId || pending.length === 0) return;
   const batch = pending.splice(0, pending.length);
-  const body = JSON.stringify({ activityId, events: batch });
+  const body = JSON.stringify({ activityId, version, events: batch });
   // sendBeacon 在页面卸载时最可靠；Content-Type 用 Blob 指定为 JSON
   void navigator.sendBeacon(
     `${API_BASE}/analytics/events`,

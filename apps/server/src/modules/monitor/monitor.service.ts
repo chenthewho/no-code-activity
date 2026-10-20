@@ -75,6 +75,20 @@ export function metricValue(metric: Metric, stats: WindowStats): MetricValue {
   }
 }
 
+function statsFromCounts(counts: Map<string, number>): WindowStats {
+  const n = (type: string) => counts.get(type) ?? 0;
+  return {
+    attempts: OUTCOME_TYPES.reduce((sum, t) => sum + n(t), 0),
+    boots: n('boot'),
+    loadErrors: n('load_error'),
+    dslInvalid: n('dsl_invalid'),
+    stalls: n('stall'),
+    whiteScreens: n('white_screen'),
+    jsErrors: n('js_error'),
+    publishInvalid: n('publish_invalid'),
+  };
+}
+
 export function isRateMetric(metric: Metric): boolean {
   return metric.endsWith('_rate');
 }
@@ -123,6 +137,7 @@ export class MonitorService {
     await this.prisma.monitorEvent.createMany({
       data: dto.events.map((e) => ({
         activityId: dto.activityId ?? null,
+        version: dto.version ?? null,
         type: e.type,
         host: dto.host ?? null,
         message: e.message?.slice(0, 500) ?? null,
@@ -162,17 +177,37 @@ export class MonitorService {
       where: { createdAt: { gte: since }, ...(activityId ? { activityId } : {}) },
       _count: { _all: true },
     });
-    const n = (type: string) => rows.find((r) => r.type === type)?._count._all ?? 0;
-    return {
-      attempts: OUTCOME_TYPES.reduce((sum, t) => sum + n(t), 0),
-      boots: n('boot'),
-      loadErrors: n('load_error'),
-      dslInvalid: n('dsl_invalid'),
-      stalls: n('stall'),
-      whiteScreens: n('white_screen'),
-      jsErrors: n('js_error'),
-      publishInvalid: n('publish_invalid'),
-    };
+    return statsFromCounts(new Map(rows.map((r) => [r.type, r._count._all])));
+  }
+
+  /** 单个活动按发布版本拆开的指标：灰度期间并排看新旧版本的失败率 */
+  async versionStats(since: Date, activityId: string) {
+    const rows = await this.prisma.monitorEvent.groupBy({
+      by: ['version', 'type'],
+      where: { createdAt: { gte: since }, activityId, version: { not: null } },
+      _count: { _all: true },
+    });
+    const byVersion = new Map<number, Map<string, number>>();
+    for (const row of rows) {
+      const counts = byVersion.get(row.version!) ?? new Map<string, number>();
+      counts.set(row.type, row._count._all);
+      byVersion.set(row.version!, counts);
+    }
+    return [...byVersion.entries()]
+      .sort(([a], [b]) => b - a)
+      .map(([version, counts]) => {
+        const stats = statsFromCounts(counts);
+        return {
+          version,
+          attempts: stats.attempts,
+          jsErrors: stats.jsErrors,
+          rates: {
+            dslInvalid: metricValue('dsl_invalid_rate', stats).value,
+            whiteScreen: metricValue('white_screen_rate', stats).value,
+            loadError: metricValue('load_error_rate', stats).value,
+          },
+        };
+      });
   }
 
   async overview(hours: number, activityId?: string) {
@@ -182,7 +217,7 @@ export class MonitorService {
       ...(activityId ? { activityId } : {}),
     };
 
-    const [stats, durations, hourly, problems, recent] = await Promise.all([
+    const [stats, durations, hourly, problems, recent, versions] = await Promise.all([
       this.windowStats(since, activityId),
       // 分位数在应用层算：取最近 5000 次成功渲染的耗时，量级足够、开销可控
       this.prisma.monitorEvent.findMany({
@@ -208,6 +243,7 @@ export class MonitorService {
         orderBy: { createdAt: 'desc' },
         take: 30,
       }),
+      activityId ? this.versionStats(since, activityId) : Promise.resolve([]),
     ]);
 
     const sorted = durations.map((d) => d.durationMs!).sort((a, b) => a - b);
@@ -249,10 +285,12 @@ export class MonitorService {
         title: titles.find((t) => t.id === p.activityId)?.title ?? '（已删除）',
         problems: p._count._all,
       })),
+      byVersion: versions,
       recent: recent.map((e) => ({
         id: e.id.toString(),
         type: e.type,
         activityId: e.activityId,
+        version: e.version,
         host: e.host,
         message: e.message,
         detail: e.detail,

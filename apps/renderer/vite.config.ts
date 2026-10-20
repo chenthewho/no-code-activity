@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { dslPrefetchScript } from './prefetch-script';
 
 const pkg = (name: string) => fileURLToPath(new URL(`../../packages/${name}/src`, import.meta.url));
 
@@ -11,7 +12,7 @@ const pkg = (name: string) => fileURLToPath(new URL(`../../packages/${name}/src`
  * 顺带 preconnect API 域名，省掉一次 DNS + TLS。只作用于活动页 index.html。
  */
 function dslPrefetch(apiBase: string): Plugin {
-  const script = `(function(){try{var q=new URLSearchParams(location.search);if(q.get('preview'))return;var id=q.get('id')||location.pathname.split('/act/')[1];var dsl=q.get('dsl');if(!id&&!dsl)return;var url=dsl||${JSON.stringify(apiBase)}+'/runtime/activities/'+id+'/dsl';var p=fetch(url).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()});p.catch(function(){});window.__NCA_DSL_PREFETCH__={url:url,promise:p}}catch(e){}})();`;
+  const script = dslPrefetchScript(apiBase);
   return {
     name: 'nca-dsl-prefetch',
     transformIndexHtml(_html, ctx) {

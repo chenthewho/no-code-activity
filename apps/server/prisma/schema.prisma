@@ -112,6 +112,11 @@ model Activity {
 
   /// 当前线上版本号，指向 ActivityVersion.version；回滚只改这个指针
   publishedVersion Int?
+  /// 灰度中的版本：命中 grayRule 的访问看它，其余仍看 publishedVersion。全量或停止后清空
+  grayVersion      Int?
+  /// { percent, channels, userIds }，见 @nca/shared 的 GrayRule
+  grayRule         Json?
+  grayStartedAt    DateTime?
 
   ownerId String
   owner   User   @relation("ActivityOwner", fields: [ownerId], references: [id])
@@ -480,11 +485,14 @@ model MonitorEvent {
   detail     Json?
   /// boot 记首屏渲染完成耗时（距导航开始，毫秒）
   durationMs Int?
+  /// 这次访问看到的发布版本：灰度期间据此对比新旧版本的失败率
+  version    Int?
   ua         String?  @db.VarChar(255)
   createdAt  DateTime @default(now())
 
   @@index([type, createdAt])
   @@index([activityId, createdAt])
+  @@index([activityId, version, type])
   @@map("monitor_event")
 }
 

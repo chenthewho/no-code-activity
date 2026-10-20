@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Input, Layout, Modal, Spin, Tabs, message } from 'antd';
+import { Alert, Form, Input, Layout, Modal, Radio, Spin, Tabs, message } from 'antd';
 import { ApartmentOutlined, AppstoreOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
@@ -18,6 +18,12 @@ import { DesignerHeader, type DeviceMode } from '../components/designer/Designer
 import { SaveAsTemplateModal } from '../components/designer/SaveAsTemplateModal';
 import { AiPanel } from '../components/designer/AiPanel';
 import { PageSettingsModal } from '../components/designer/PageSettingsModal';
+import {
+  GrayRuleFields,
+  fromGrayRule,
+  toGrayRule,
+  type GrayRuleValues,
+} from '../components/GrayRuleFields';
 
 const AUTOSAVE_DELAY = 1500;
 
@@ -39,6 +45,8 @@ export function DesignerPage() {
   const [savedAt, setSavedAt] = useState<string>('');
   const [publishing, setPublishing] = useState(false);
   const [changelog, setChangelog] = useState('');
+  const [publishMode, setPublishMode] = useState<'full' | 'gray'>('full');
+  const [grayForm] = Form.useForm<GrayRuleValues>();
   const [device, setDevice] = useState<DeviceMode>('mobile');
   const [leftTab, setLeftTab] = useState('materials');
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -142,18 +150,28 @@ export function DesignerPage() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  // 灰度需要一个在线的全量版本兜底；有进行中的灰度时提示会被替换
+  const { data: activity, refetch: refetchActivity } = useQuery({
+    queryKey: ['activity', activityId],
+    queryFn: () => activityApi.detail(activityId),
+  });
+  const canGray = activity?.status === 'published' && Boolean(activity.publishedVersion);
+
   const publishMutation = useMutation({
     mutationFn: async () => {
+      const gray = publishMode === 'gray' ? toGrayRule(await grayForm.validateFields()) : undefined;
       // 发布前先把当前编辑落库，否则发的是上一次自动保存的内容
       await activityApi.saveDraft(activityId, dsl);
-      return activityApi.publish(activityId, changelog || undefined);
+      return activityApi.publish(activityId, changelog || undefined, gray);
     },
     onSuccess: (result) => {
       markSaved();
       setPublishing(false);
       setChangelog('');
+      setPublishMode('full');
+      void refetchActivity();
       Modal.success({
-        title: `发布成功 v${result.version}`,
+        title: result.gray ? `灰度发布成功 v${result.version}` : `发布成功 v${result.version}`,
         content: (
           <div>
             <p>活动地址：</p>
@@ -374,6 +392,36 @@ export function DesignerPage() {
               </ul>
             }
           />
+        )}
+        <Radio.Group
+          value={publishMode}
+          onChange={(e) => {
+            setPublishMode(e.target.value as 'full' | 'gray');
+            grayForm.setFieldsValue(fromGrayRule(activity?.grayRule));
+          }}
+          style={{ marginBottom: 12 }}
+          options={[
+            { value: 'full', label: '全量发布' },
+            { value: 'gray', label: '灰度发布', disabled: !canGray },
+          ]}
+        />
+        {!canGray && (
+          <div style={{ color: '#8c8c8c', fontSize: 12, marginBottom: 12 }}>
+            灰度需要一个在线的全量版本兜底，首次发布请直接全量。
+          </div>
+        )}
+        {publishMode === 'full' && activity?.grayVersion && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={`全量发布会结束进行中的灰度（v${activity.grayVersion}）`}
+          />
+        )}
+        {publishMode === 'gray' && (
+          <Form form={grayForm} layout="vertical" size="small" initialValues={fromGrayRule(activity?.grayRule)}>
+            <GrayRuleFields activityId={activityId} />
+          </Form>
         )}
         <Input.TextArea
           rows={3}

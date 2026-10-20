@@ -29,6 +29,8 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: corsOrigins(config.get<string>('CORS_ORIGINS', '*')),
     credentials: true,
+    // 渲染器跨域读这次拿到的是哪个版本、是否灰度
+    exposedHeaders: ['X-NCA-Version', 'X-NCA-Gray'],
   });
 
   app.useGlobalFilters(new AllExceptionsFilter());

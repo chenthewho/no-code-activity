@@ -23,20 +23,22 @@ import { PublishService } from '../publish/publish.service';
 import type { JwtPayload } from '../auth/auth.types';
 import {
   createActivitySchema,
+  grayRuleSchema,
   listActivitySchema,
+  publishSchema,
   saveDraftSchema,
   transferOwnerSchema,
   updateActivitySchema,
   upsertMemberSchema,
   type CreateActivityDto,
   type ListActivityDto,
+  type PublishDto,
   type SaveDraftDto,
   type UpdateActivityDto,
   type UpsertMemberDto,
 } from './activity.dto';
 import { ActivityService } from './activity.service';
 
-const publishSchema = z.object({ changelog: z.string().max(500).optional() });
 const rollbackSchema = z.object({ version: z.coerce.number().int().positive() });
 const statusSchema = z.object({
   status: z.enum([ACTIVITY_STATUS.PUBLISHED, ACTIVITY_STATUS.OFFLINE]),
@@ -181,16 +183,43 @@ export class ActivityController {
   // ---- 发布 ----
 
   @Post(':id/publish')
-  @ApiOperation({ summary: '发布活动，生成不可变版本快照' })
+  @ApiOperation({ summary: '发布活动，生成不可变版本快照；带 gray 为灰度发布' })
   @RequirePermissions(PERMISSION.ACTIVITY_PUBLISH)
   @RequireActivityAccess('edit')
   @Audit({ action: 'activity.publish', targetParam: 'id' })
   publishActivity(
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(publishSchema)) dto: { changelog?: string },
+    @Body(new ZodValidationPipe(publishSchema)) dto: PublishDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.publish.publish(id, user.sub, dto.changelog);
+    return this.publish.publish(id, user.sub, dto.changelog, dto.gray);
+  }
+
+  @Patch(':id/gray')
+  @ApiOperation({ summary: '调整灰度范围（比例 / 渠道 / 白名单）' })
+  @RequirePermissions(PERMISSION.ACTIVITY_PUBLISH)
+  @RequireActivityAccess('edit')
+  @Audit({ action: 'activity.gray.update', targetParam: 'id' })
+  updateGray(@Param('id') id: string, @Body(new ZodValidationPipe(grayRuleSchema)) rule: PublishDto['gray']) {
+    return this.publish.updateGray(id, rule!);
+  }
+
+  @Post(':id/gray/promote')
+  @ApiOperation({ summary: '灰度转全量（只切指针，秒级生效）' })
+  @RequirePermissions(PERMISSION.ACTIVITY_PUBLISH)
+  @RequireActivityAccess('edit')
+  @Audit({ action: 'activity.gray.promote', targetParam: 'id' })
+  promoteGray(@Param('id') id: string) {
+    return this.publish.promoteGray(id);
+  }
+
+  @Delete(':id/gray')
+  @ApiOperation({ summary: '停止灰度：所有人回到全量版本' })
+  @RequirePermissions(PERMISSION.ACTIVITY_PUBLISH)
+  @RequireActivityAccess('edit')
+  @Audit({ action: 'activity.gray.stop', targetParam: 'id' })
+  stopGray(@Param('id') id: string) {
+    return this.publish.stopGray(id);
   }
 
   @Get(':id/versions')

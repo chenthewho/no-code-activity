@@ -34,6 +34,7 @@ export class AnalyticsService {
     await this.prisma.analyticsEvent.createMany({
       data: dto.events.map((e) => ({
         activityId: dto.activityId,
+        version: dto.version ?? null,
         nodeId: e.nodeId ?? null,
         event: e.event,
         channel: e.channel ?? null,

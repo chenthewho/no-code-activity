@@ -25,6 +25,7 @@ const MAX_JS_ERRORS = 20;
 let enabled = false;
 let activityId: string | undefined;
 let host: string | undefined;
+let version: number | undefined;
 let outcomeReported = false;
 let jsErrors = 0;
 const pending: PendingEvent[] = [];
@@ -67,6 +68,11 @@ export function setMonitorActivity(id: string): void {
   activityId = id;
 }
 
+/** DSL 拉回来才知道看到的是哪个发布版本 */
+export function setMonitorVersion(value: number | undefined): void {
+  version = value;
+}
+
 export function reportMonitor(
   type: MonitorEventType,
   data: { message?: string; detail?: Record<string, unknown>; durationMs?: number } = {},
@@ -83,7 +89,7 @@ export function reportMonitor(
 }
 
 function body(): string {
-  return JSON.stringify({ activityId, host, events: pending.splice(0, 50) });
+  return JSON.stringify({ activityId, host, version, events: pending.splice(0, 50) });
 }
 
 function flush(): void {

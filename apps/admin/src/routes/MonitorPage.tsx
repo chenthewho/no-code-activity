@@ -116,6 +116,9 @@ export function MonitorPage() {
       <Card>
         <Tabs
           items={[
+            ...(activityId && data && data.byVersion.length > 0
+              ? [{ key: 'versions', label: '按版本', children: <VersionTable data={data} /> }]
+              : []),
             {
               key: 'recent',
               label: '最近异常',
@@ -182,6 +185,37 @@ function Overview({ data }: { data: MonitorOverview }) {
         />
       </Col>
     </Row>
+  );
+}
+
+/** 一个活动各发布版本的失败率并排：灰度期间新版比旧版明显差，就该停下来 */
+function VersionTable({ data }: { data: MonitorOverview }) {
+  // 版本倒序排列，最后一行是窗口内最老的版本，作为对照
+  const baseline = data.byVersion[data.byVersion.length - 1];
+  const worse = (v: number, base?: number) =>
+    base !== undefined && v > base * 1.5 && v - base > 0.005;
+  return (
+    <Table
+      rowKey="version"
+      size="small"
+      dataSource={data.byVersion}
+      pagination={false}
+      columns={[
+        { title: '版本', dataIndex: 'version', width: 100, render: (v: number) => `v${v}` },
+        { title: '访问', dataIndex: 'attempts', width: 100 },
+        ...(['dslInvalid', 'whiteScreen', 'loadError'] as const).map((key) => ({
+          title: { dslInvalid: 'DSL 校验失败率', whiteScreen: '白屏率', loadError: '加载失败率' }[key],
+          render: (_: unknown, row: MonitorOverview['byVersion'][number]) => {
+            const value = row.rates[key];
+            const bad = row !== baseline && worse(value, baseline?.rates[key]);
+            return (
+              <span style={bad ? { color: '#cf1322', fontWeight: 600 } : undefined}>{pct(value)}</span>
+            );
+          },
+        })),
+        { title: 'JS 错误', dataIndex: 'jsErrors', width: 100 },
+      ]}
+    />
   );
 }
 

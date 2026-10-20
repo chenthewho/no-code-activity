@@ -4,6 +4,14 @@ import { describeUpgrade, knownMaterialNames, materialVersions, upgradeMaterials
 export interface LoadResult {
   dsl: FinalDsl;
   warnings: string[];
+  /** 服务端这次给的发布版本（响应头 X-NCA-Version），灰度期间埋点与监控据此区分新旧版 */
+  version?: number;
+}
+
+/** 预取与正常请求拿到的同一种东西：DSL 原文 + 版本号 */
+interface FetchedDsl {
+  raw: unknown;
+  version?: number;
 }
 
 /** DSL 没拉下来（网络、404、活动未发布）。与「拉下来了但不合法」分开上报，排查方向完全不同 */
@@ -28,7 +36,7 @@ export class DslInvalidError extends Error {
 declare global {
   interface Window {
     /** index.html 里的内联脚本在 JS 下载期间就开始拉 DSL，见 vite.config.ts 的 dslPrefetch */
-    __NCA_DSL_PREFETCH__?: { url: string; promise: Promise<unknown> };
+    __NCA_DSL_PREFETCH__?: { url: string; promise: Promise<{ data: unknown; version: string | null }> };
   }
 }
 
@@ -36,7 +44,7 @@ declare global {
  * 复用与 url 匹配的预取请求。不取走：StrictMode 下加载 effect 会跑两遍，两遍都该复用
  * 同一个请求；预取失败了才清掉，让之后的加载重新发请求。
  */
-function takePrefetch(url: string): Promise<unknown> | null {
+function takePrefetch(url: string): Promise<{ data: unknown; version: string | null }> | null {
   const prefetch = window.__NCA_DSL_PREFETCH__;
   if (!prefetch || prefetch.url !== url) return null;
   prefetch.promise.catch(() => {
@@ -45,11 +53,17 @@ function takePrefetch(url: string): Promise<unknown> | null {
   return prefetch.promise;
 }
 
-async function fetchDsl(url: string, signal?: AbortSignal): Promise<unknown> {
+function parseVersion(value: string | null | undefined): number | undefined {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+async function fetchDsl(url: string, signal?: AbortSignal, headers: Record<string, string> = {}): Promise<FetchedDsl> {
   const prefetched = takePrefetch(url);
   if (prefetched) {
     try {
-      return await prefetched;
+      const { data, version } = await prefetched;
+      return { raw: data, version: parseVersion(version) };
     } catch (err) {
       const status = Number(/HTTP (\d+)/.exec((err as Error).message)?.[1]) || undefined;
       throw new DslLoadError(`DSL 加载失败：${(err as Error).message}`, status);
@@ -57,14 +71,14 @@ async function fetchDsl(url: string, signal?: AbortSignal): Promise<unknown> {
   }
   let response: Response;
   try {
-    response = await fetch(url, { signal });
+    response = await fetch(url, { signal, headers });
   } catch (err) {
     if (signal?.aborted) throw err;
     throw new DslLoadError(`DSL 加载失败：${(err as Error).message}`);
   }
   if (!response.ok) throw new DslLoadError(`DSL 加载失败：HTTP ${response.status}`, response.status);
   try {
-    return await response.json();
+    return { raw: await response.json(), version: parseVersion(response.headers.get('X-NCA-Version')) };
   } catch {
     throw new DslLoadError('DSL 加载失败：返回的不是合法 JSON', response.status);
   }
@@ -77,8 +91,13 @@ async function fetchDsl(url: string, signal?: AbortSignal): Promise<unknown> {
  * 这里是最后一道防线，目标是「尽可能把页面渲染出来」——
  * 结构错误直接抛出走错误页，warning 只记录不阻断。
  */
-export async function loadDsl(url: string, signal?: AbortSignal): Promise<LoadResult> {
-  return parseDsl(await fetchDsl(url, signal));
+export async function loadDsl(
+  url: string,
+  signal?: AbortSignal,
+  headers?: Record<string, string>,
+): Promise<LoadResult> {
+  const { raw, version } = await fetchDsl(url, signal, headers);
+  return { ...parseDsl(raw), version };
 }
 
 export function parseDsl(raw: unknown): LoadResult {

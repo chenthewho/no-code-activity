@@ -8,8 +8,13 @@ import {
   type FinalDsl,
   type Manifest,
 } from '@nca/dsl';
-import { ACTIVITY_STATUS, ACTIVITY_STATUS_TRANSITIONS, type ActivityStatus } from '@nca/shared';
-import type { Prisma } from '@prisma/client';
+import {
+  ACTIVITY_STATUS,
+  ACTIVITY_STATUS_TRANSITIONS,
+  type ActivityStatus,
+  type GrayRule,
+} from '@nca/shared';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { MonitorService } from '../monitor/monitor.service';
@@ -22,6 +27,8 @@ export interface PublishResult {
   dslUrl: string;
   manifestUrl: string;
   activityUrl: string;
+  /** 这次是灰度发布：只有命中规则的访问看到它 */
+  gray?: boolean;
 }
 
 @Injectable()
@@ -41,12 +48,26 @@ export class PublishService {
    *
    * 全程持锁，避免两个人同时点发布抢到同一个版本号。
    */
-  async publish(activityId: string, userId: string, changelog?: string): Promise<PublishResult> {
+  /**
+   * 发布。gray 不为空时是灰度发布：生成同样不可变的版本快照，但只挂到 grayVersion 上，
+   * 线上全量指针 publishedVersion 不动——命中规则的访问看新版，其余照旧，
+   * 观察监控里新版的失败率没问题再全量。
+   */
+  async publish(
+    activityId: string,
+    userId: string,
+    changelog?: string,
+    gray?: GrayRule,
+  ): Promise<PublishResult> {
     return this.redis.withLock(`publish:${activityId}`, async () => {
       const activity = await this.prisma.activity.findFirst({
         where: { id: activityId, deletedAt: null },
       });
       if (!activity) throw new NotFoundException('活动不存在');
+      if (gray && (activity.status !== ACTIVITY_STATUS.PUBLISHED || !activity.publishedVersion)) {
+        // 灰度是「新旧两版并存」，没有在线的全量版本时，不命中的人什么都看不到
+        throw new BadRequestException('活动还没有在线的全量版本，首次发布请直接全量');
+      }
 
       const draft = await this.prisma.dslDraft.findUnique({ where: { activityId } });
       if (!draft) throw new BadRequestException('活动尚无内容，请先在设计器中编辑');
@@ -125,12 +146,31 @@ export class PublishService {
         }),
         this.prisma.activity.update({
           where: { id: activityId },
-          data: { status: ACTIVITY_STATUS.PUBLISHED, publishedVersion: version },
+          data: gray
+            ? {
+                grayVersion: version,
+                grayRule: gray as unknown as Prisma.InputJsonValue,
+                grayStartedAt: new Date(),
+              }
+            : {
+                status: ACTIVITY_STATUS.PUBLISHED,
+                publishedVersion: version,
+                // 全量发布取代进行中的灰度
+                grayVersion: null,
+                grayRule: Prisma.DbNull,
+                grayStartedAt: null,
+              },
         }),
       ]);
 
-      this.logger.log(`活动 ${activityId} 发布 v${version}`);
-      return { version, dslUrl, manifestUrl, activityUrl: this.activityUrl(activityId) };
+      this.logger.log(`活动 ${activityId} ${gray ? '灰度' : ''}发布 v${version}`);
+      return {
+        version,
+        dslUrl,
+        manifestUrl,
+        activityUrl: this.activityUrl(activityId),
+        ...(gray ? { gray: true } : {}),
+      };
     });
   }
 
@@ -148,9 +188,20 @@ export class PublishService {
         throw new BadRequestException(`版本 v${targetVersion} 缺少发布产物，无法回滚`);
       }
 
+      const activity = await this.prisma.activity.findFirst({
+        where: { id: activityId },
+        select: { grayVersion: true },
+      });
       await this.prisma.activity.update({
         where: { id: activityId },
-        data: { publishedVersion: targetVersion, status: ACTIVITY_STATUS.PUBLISHED },
+        data: {
+          publishedVersion: targetVersion,
+          status: ACTIVITY_STATUS.PUBLISHED,
+          // 回滚到的正是灰度中的版本：等同转全量，灰度随之结束，免得两个指针指向同一版
+          ...(activity?.grayVersion === targetVersion
+            ? { grayVersion: null, grayRule: Prisma.DbNull, grayStartedAt: null }
+            : {}),
+        },
       });
 
       this.logger.warn(`活动 ${activityId} 回滚至 v${targetVersion}`);
@@ -161,6 +212,60 @@ export class PublishService {
         activityUrl: this.activityUrl(activityId),
       };
     });
+  }
+
+  /** 调整灰度范围（扩大比例、加渠道、加白名单），版本不变 */
+  async updateGray(activityId: string, rule: GrayRule): Promise<void> {
+    const activity = await this.grayingActivity(activityId);
+    await this.prisma.activity.update({
+      where: { id: activity.id },
+      data: { grayRule: rule as unknown as Prisma.InputJsonValue },
+    });
+  }
+
+  /** 灰度转全量：把全量指针切到灰度版本。和回滚一样只切指针，秒级生效 */
+  async promoteGray(activityId: string): Promise<PublishResult> {
+    return this.redis.withLock(`publish:${activityId}`, async () => {
+      const activity = await this.grayingActivity(activityId);
+      const version = await this.prisma.activityVersion.findUnique({
+        where: { activityId_version: { activityId, version: activity.grayVersion! } },
+      });
+      if (!version?.dslUrl || !version.manifestUrl) throw new BadRequestException('灰度版本缺少发布产物');
+      await this.prisma.activity.update({
+        where: { id: activityId },
+        data: {
+          publishedVersion: version.version,
+          status: ACTIVITY_STATUS.PUBLISHED,
+          grayVersion: null,
+          grayRule: Prisma.DbNull,
+          grayStartedAt: null,
+        },
+      });
+      this.logger.log(`活动 ${activityId} 灰度 v${version.version} 转全量`);
+      return {
+        version: version.version,
+        dslUrl: version.dslUrl,
+        manifestUrl: version.manifestUrl,
+        activityUrl: this.activityUrl(activityId),
+      };
+    });
+  }
+
+  /** 停止灰度：所有人回到全量版本，灰度版本快照保留在历史里 */
+  async stopGray(activityId: string): Promise<void> {
+    const activity = await this.grayingActivity(activityId);
+    await this.prisma.activity.update({
+      where: { id: activity.id },
+      data: { grayVersion: null, grayRule: Prisma.DbNull, grayStartedAt: null },
+    });
+    this.logger.warn(`活动 ${activityId} 停止灰度 v${activity.grayVersion}`);
+  }
+
+  private async grayingActivity(activityId: string) {
+    const activity = await this.prisma.activity.findFirst({ where: { id: activityId, deletedAt: null } });
+    if (!activity) throw new NotFoundException('活动不存在');
+    if (!activity.grayVersion) throw new BadRequestException('该活动当前没有进行中的灰度');
+    return activity;
   }
 
   async changeStatus(activityId: string, next: ActivityStatus): Promise<void> {
